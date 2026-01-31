@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import pytest
 from datetime import datetime
+from unittest.mock import Mock, patch
 
 from src.kernel.concurrency import (
     get_task_manager,
@@ -19,6 +20,13 @@ from src.kernel.concurrency import (
     WatchDog,
     StreamHeartbeat,
     TaskGroupError,
+)
+from src.kernel.concurrency.exceptions import (
+    TaskNotFoundError,
+    TaskTimeoutError,
+    TaskGroupAlreadyExists,
+    TaskGroupNotFoundError,
+    WatchDogError,
 )
 
 
