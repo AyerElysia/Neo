@@ -961,10 +961,12 @@ class TestEventBroadcast:
         # 收集事件数据
         received_events: list[dict] = []
 
-        async def event_handler(event):
+        async def event_handler(event_name: str, params: dict):
             # 只收集特定 logger 的事件
-            if event.data.get("logger_name") == "event_test":
-                received_events.append(event.data)
+            if params.get("logger_name") == "event_test":
+                received_events.append(params)
+            from src.kernel.event import EventDecision
+            return (EventDecision.SUCCESS, params)
 
         # 订阅事件（通过 event 系统直接订阅）
         from src.kernel.event import event_bus
@@ -1012,10 +1014,12 @@ class TestEventBroadcast:
 
         received_logs: list[dict] = []
 
-        async def log_handler(event):
+        async def log_handler(event_name: str, params: dict):
             # 只收集特定 logger 的事件
-            if event.data.get("logger_name") == "metadata_broadcast_test":
-                received_logs.append(event.data)
+            if params.get("logger_name") == "metadata_broadcast_test":
+                received_logs.append(params)
+            from src.kernel.event import EventDecision
+            return (EventDecision.SUCCESS, params)
 
         # 通过 event 系统订阅
         from src.kernel.event import event_bus
@@ -1055,10 +1059,12 @@ class TestEventBroadcast:
 
         received_logs: list[dict] = []
 
-        async def log_handler(event):
+        async def log_handler(event_name: str, params: dict):
             # 只收集特定 logger 的事件
-            if event.data.get("logger_name") == "no_broadcast_test":
-                received_logs.append(event.data)
+            if params.get("logger_name") == "no_broadcast_test":
+                received_logs.append(params)
+            from src.kernel.event import EventDecision
+            return (EventDecision.SUCCESS, params)
 
         from src.kernel.event import event_bus
         unsubscribe = event_bus.subscribe(LOG_OUTPUT_EVENT, log_handler)
@@ -1086,10 +1092,12 @@ class TestEventBroadcast:
 
         received_timestamps: list[str] = []
 
-        async def log_handler(event):
+        async def log_handler(event_name: str, params: dict):
             # 只收集特定 logger 的事件
-            if event.data.get("logger_name") == "timestamp_test":
-                received_timestamps.append(event.data["timestamp"])
+            if params.get("logger_name") == "timestamp_test":
+                received_timestamps.append(params["timestamp"])
+            from src.kernel.event import EventDecision
+            return (EventDecision.SUCCESS, params)
 
         from src.kernel.event import event_bus
         unsubscribe = event_bus.subscribe(LOG_OUTPUT_EVENT, log_handler)

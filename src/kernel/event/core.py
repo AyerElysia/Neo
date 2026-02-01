@@ -2,6 +2,12 @@
 
 本模块提供kernel层的最小化Pub/Sub实现。
 支持事件订阅、取消订阅和发布，以及异步处理器。
+
+协议约束（硬性要求）：
+- 订阅者函数签名：`handler(event_name, params)`
+- params 必须是 `dict[str, Any]`
+- 订阅者返回：`(EventDecision, next_params)`，且 next_params 的 key 集合必须与入参 params 完全一致
+- 若订阅者返回值不符合要求，则其“影响”会被丢弃：总线继续执行后续订阅者，但 params 保持不变
 """
 
 from __future__ import annotations
@@ -9,36 +15,16 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Awaitable, Callable, Dict, List, Set, Tuple, Union
+from typing import Any
 
 from src.kernel.logger import get_logger, COLOR
 
 logger = get_logger("event_bus", display="EventBus", color=COLOR.MAGENTA)
 
-
-@dataclass
-class Event:
-    """事件数据结构。
-
-    Attributes:
-        name: 事件名称/标识符
-        data: 事件负载数据（可以是任意类型）
-        source: 可选的事件源标识符
-    """
-
-    name: str
-    data: Any = None
-    source: str | None = None
-
-    def __post_init__(self):
-        """初始化后验证事件名称。"""
-        if not self.name or not isinstance(self.name, str):
-            raise ValueError("事件名称必须是非空字符串")
-
-
-EventHandler = Callable[[Event], Any]
+EventParams = dict[str, Any]
 
 
 class EventDecision(str, Enum):
@@ -54,10 +40,10 @@ class EventDecision(str, Enum):
     PASS = "PASS"
 
 
-EventHandlerResult = Tuple[EventDecision, Any]
-EventHandlerCallable = Union[
-    Callable[[Event], Union[EventHandlerResult, Tuple[str, Any], Any, Awaitable[Any]]],
-    Callable[[Event, Any], Union[EventHandlerResult, Tuple[str, Any], Any, Awaitable[Any]]],
+EventHandlerResult = tuple[EventDecision, EventParams]
+EventHandlerCallable = Callable[
+    [str, EventParams],
+    EventHandlerResult | tuple[str, EventParams] | Awaitable[EventHandlerResult | tuple[str, EventParams]],
 ]
 
 
@@ -66,6 +52,22 @@ class _Subscriber:
     handler: EventHandlerCallable
     priority: int
     order: int
+
+
+def _validate_subscriber(handler: EventHandlerCallable) -> None:
+    """验证订阅者是否可被 (event_name, params) 调用。"""
+
+    try:
+        sig = inspect.signature(handler)
+    except Exception as e:
+        raise ValueError(f"处理器签名不可解析: {e}") from e
+
+    try:
+        sig.bind_partial("__probe__", {})
+    except TypeError as e:
+        raise ValueError(
+            "处理器必须支持 handler(event_name, params) 形式调用"
+        ) from e
 
 
 class EventBus:
@@ -77,11 +79,10 @@ class EventBus:
     Example:
         >>> bus = EventBus()
         >>> from src.kernel.event import EventDecision
-        >>> async def handler(event: Event, shared):
-        ...     print(f"Received: {event.name}")
-        ...     return (EventDecision.SUCCESS, shared)
+        >>> async def handler(event_name: str, params: dict):
+        ...     return (EventDecision.SUCCESS, params)
         >>> bus.subscribe("user_login", handler, priority=10)
-        >>> await bus.publish(Event(name="user_login", data={"user_id": "123"}), shared={})
+        >>> await bus.publish("user_login", {"user_id": "123"})
     """
 
     def __init__(self, name: str = "default") -> None:
@@ -93,10 +94,9 @@ class EventBus:
         self.name = name
         # 存储处理器：event_name -> (handler -> subscriber metadata)
         # 使用 dict 便于 O(1) 取消订阅；发布时按 priority + order 做稳定排序
-        self._subscribers: Dict[str, Dict[EventHandlerCallable, _Subscriber]] = defaultdict(dict)
+        self._subscribers: dict[str, dict[EventHandlerCallable, _Subscriber]] = defaultdict(dict)
         # 跟踪每个处理器订阅的所有事件，便于清理
-        self._handler_subscriptions: Dict[EventHandlerCallable, Set[str]] = defaultdict(set)
-        self._lock = asyncio.Lock()
+        self._handler_subscriptions: dict[EventHandlerCallable, set[str]] = defaultdict(set)
         self._subscribe_order = 0
 
     def subscribe(
@@ -109,7 +109,7 @@ class EventBus:
 
         Args:
             event_name: 要订阅的事件名称
-            handler: 接受Event参数的异步或同步可调用对象
+            handler: 订阅者处理器，必须支持 handler(event_name, params) 调用
 
         Returns:
             取消订阅函数，调用可移除此订阅
@@ -122,13 +122,23 @@ class EventBus:
         if not callable(handler):
             raise ValueError("处理器必须是可调用对象")
 
+        _validate_subscriber(handler)
+
         # 如果重复订阅同一个 handler，则更新 priority，保持最初 order 以稳定排序
         existing = self._subscribers[event_name].get(handler)
         if existing is None:
             self._subscribe_order += 1
-            sub = _Subscriber(handler=handler, priority=int(priority), order=self._subscribe_order)
+            sub = _Subscriber(
+                handler=handler,
+                priority=int(priority),
+                order=self._subscribe_order,
+            )
         else:
-            sub = _Subscriber(handler=handler, priority=int(priority), order=existing.order)
+            sub = _Subscriber(
+                handler=handler,
+                priority=int(priority),
+                order=existing.order,
+            )
 
         self._subscribers[event_name][handler] = sub
         self._handler_subscriptions[handler].add(event_name)
@@ -204,35 +214,28 @@ class EventBus:
         )
         return count
 
-    async def publish(self, event: Event, shared: Any = None) -> EventHandlerResult:
+    async def publish(self, event_name: str, params: EventParams) -> EventHandlerResult:
         """按订阅顺序（priority 从高到低）链式发布事件。
 
-        订阅者必须返回 (decision, next_shared)。
-        - SUCCESS: next_shared 会传递给下一个订阅者
-        - PASS: 忽略 next_shared，继续执行下一个订阅者（共享参数保持不变）
-        - STOP: 设置 shared 为 next_shared 并立刻终止链
-
-        兼容模式：
-        - 若订阅者只接受 (event) 也可；若接受 (event, shared) 将收到当前共享参数
-        - 若订阅者返回 None/非二元组，按 (SUCCESS, shared) 处理（不改变共享参数）
-
         Args:
-            event: 要发布的事件
-            shared: 初始共享参数
+            event_name: 事件名称
+            params: 事件参数字典（将被链式传递）
 
         Returns:
-            (last_decision, final_shared)
+            (last_decision, final_params)
 
         Raises:
-            ValueError: 如果 event 不是 Event 实例
+            ValueError: event_name 或 params 非法
         """
-        if not isinstance(event, Event):
-            raise ValueError("必须发布Event实例")
-
-        event_name = event.name
+        if not event_name or not isinstance(event_name, str):
+            raise ValueError("事件名称必须是非空字符串")
+        if not isinstance(params, dict):
+            raise ValueError("params 必须是 dict")
+        if any(not isinstance(k, str) for k in params.keys()):
+            raise ValueError("params 的 key 必须全部为 str")
 
         if event_name not in self._subscribers or not self._subscribers[event_name]:
-            return (EventDecision.SUCCESS, shared)
+            return (EventDecision.SUCCESS, dict(params))
 
         subs = sorted(
             self._subscribers[event_name].values(),
@@ -243,13 +246,14 @@ class EventBus:
             f"正在按顺序向 {len(subs)} 个处理器发布事件 '{event_name}'"
         )
 
-        current_shared = shared
+        expected_keys = set(params.keys())
+        current_params: EventParams = dict(params)
         last_decision: EventDecision = EventDecision.SUCCESS
 
         for sub in subs:
             handler = sub.handler
             try:
-                raw_result = await self._execute_handler(handler, event, current_shared)
+                raw_result = await self._execute_handler(sub, event_name, dict(current_params))
             except Exception as e:
                 logger.error(
                     f"处理器 '{getattr(handler, '__name__', repr(handler))}' 在事件 "
@@ -259,95 +263,99 @@ class EventBus:
                 last_decision = EventDecision.PASS
                 continue
 
-            decision, next_shared = self._normalize_handler_result(raw_result, current_shared)
+            decision, next_params = self._normalize_handler_result(
+                raw_result,
+                current_params=current_params,
+                expected_keys=expected_keys,
+                handler_name=getattr(handler, "__name__", repr(handler)),
+            )
             last_decision = decision
 
             if decision == EventDecision.PASS:
                 continue
 
-            current_shared = next_shared
+            current_params = next_params
 
             if decision == EventDecision.STOP:
                 break
 
-        return (last_decision, current_shared)
+        return (last_decision, current_params)
 
-    def _normalize_handler_result(self, result: Any, current_shared: Any) -> EventHandlerResult:
-        if result is None:
-            return (EventDecision.SUCCESS, current_shared)
+    def _normalize_handler_result(
+        self,
+        result: Any,
+        *,
+        current_params: EventParams,
+        expected_keys: set[str],
+        handler_name: str,
+    ) -> EventHandlerResult:
+        """将订阅者返回值规范化。
 
-        if isinstance(result, tuple) and len(result) == 2:
-            raw_decision, next_shared = result
-            if isinstance(raw_decision, EventDecision):
-                return (raw_decision, next_shared)
-            if isinstance(raw_decision, str):
-                try:
-                    return (EventDecision(raw_decision), next_shared)
-                except ValueError:
-                    logger.warning(f"未知 decision='{raw_decision}'，按 SUCCESS 处理")
-                    return (EventDecision.SUCCESS, current_shared)
-            logger.warning("decision 类型非法，按 SUCCESS 处理")
-            return (EventDecision.SUCCESS, current_shared)
-
-        # 兼容旧处理器：返回非二元组时视为不改变共享参数
-        return (EventDecision.SUCCESS, current_shared)
-
-    async def _execute_handler(self, handler: EventHandlerCallable, event: Event, shared: Any) -> Any:
-        """执行单个事件处理器。
-
-        Args:
-            handler: 要执行的处理器函数
-            event: 要传递给处理器的事件
-
-        Returns:
-            处理器的返回值或None
+        若不满足协议（tuple、decision、params key 签名），则丢弃影响并返回 PASS + current_params。
         """
-        # 根据 handler 签名决定是否传 shared
+
+        if not (isinstance(result, tuple) and len(result) == 2):
+            logger.warning(
+                f"处理器 '{handler_name}' 返回值不合法（必须是二元组），已丢弃其影响"
+            )
+            return (EventDecision.PASS, current_params)
+
+        raw_decision, next_params = result
+
         try:
-            call_with_shared = False
-            try:
-                sig = inspect.signature(handler)
-                params = [p for p in sig.parameters.values() if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
-                # 允许 (event, shared)
-                call_with_shared = len(params) >= 2
-            except Exception:
-                # signature 获取失败时，保守尝试传 shared
-                call_with_shared = True
+            decision = raw_decision if isinstance(raw_decision, EventDecision) else EventDecision(str(raw_decision))
+        except Exception:
+            logger.warning(
+                f"处理器 '{handler_name}' decision 不合法，已丢弃其影响"
+            )
+            return (EventDecision.PASS, current_params)
 
-            if call_with_shared:
-                result = handler(event, shared)
-            else:
-                result = handler(event)
+        if not isinstance(next_params, dict):
+            logger.warning(
+                f"处理器 '{handler_name}' next_params 必须是 dict，已丢弃其影响"
+            )
+            return (EventDecision.PASS, current_params)
 
-            if asyncio.iscoroutine(result):
-                result = await result
-            return result
-        except TypeError:
-            # 如果因参数不匹配导致 TypeError，回退到单参调用
-            result = handler(event)
-            if asyncio.iscoroutine(result):
-                result = await result
-            return result
+        if any(not isinstance(k, str) for k in next_params.keys()):
+            logger.warning(
+                f"处理器 '{handler_name}' next_params 的 key 必须为 str，已丢弃其影响"
+            )
+            return (EventDecision.PASS, current_params)
 
-    def publish_sync(self, event: Event, shared: Any = None) -> asyncio.Task[EventHandlerResult]:
+        if set(next_params.keys()) != expected_keys:
+            logger.warning(
+                f"处理器 '{handler_name}' next_params 签名不一致（key 集合必须完全一致），已丢弃其影响"
+            )
+            return (EventDecision.PASS, current_params)
+
+        return (decision, next_params)
+
+    async def _execute_handler(self, sub: _Subscriber, event_name: str, params: EventParams) -> Any:
+        result = sub.handler(event_name, params)
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
+    def publish_sync(self, event_name: str, params: EventParams) -> asyncio.Task[EventHandlerResult]:
         """同步发布事件（立即返回）。
 
         为事件发布创建后台任务。适用于即发即弃场景。
 
         Args:
-            event: 要发布的事件
+            event_name: 事件名称
+            params: 事件参数字典
 
         Returns:
             将执行发布的任务
 
         Example:
-            >>> bus.publish_sync(Event(name="user_action", data={"action": "click"}))
+            >>> bus.publish_sync("user_action", {"action": "click"})
         """
-        task = asyncio.create_task(self.publish(event, shared=shared))
+        task = asyncio.create_task(self.publish(event_name, params))
         return task
 
     @property
-    def subscribed_events(self) -> Set[str]:
+    def subscribed_events(self) -> set[str]:
         """获取所有有订阅者的事件名称集合。"""
         return set(self._subscribers.keys())
 
@@ -370,7 +378,7 @@ class EventBus:
         self._handler_subscriptions.clear()
         logger.debug(f"已从事件总线 '{self.name}' 清除所有订阅")
 
-    def get_subscribers(self, event_name: str) -> List[EventHandlerCallable]:
+    def get_subscribers(self, event_name: str) -> list[EventHandlerCallable]:
         """获取特定事件的订阅者列表。
 
         Args:

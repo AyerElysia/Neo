@@ -243,16 +243,12 @@ class Logger:
             # 获取事件总线
             event_bus = _get_event_bus()
 
-            # 创建事件
-            from src.kernel.event import Event
-            event = Event(name=LOG_OUTPUT_EVENT, data=log_data, source=self.name)
-
             # 尝试发布事件（即发即弃）
             try:
                 loop = asyncio.get_running_loop()
                 # 有运行中的事件循环
                 # 直接使用 ensure_future 安排任务
-                asyncio.ensure_future(event_bus.publish(event))
+                asyncio.ensure_future(event_bus.publish(LOG_OUTPUT_EVENT, log_data))
             except RuntimeError:
                 # 没有运行中的事件循环
                 # 事件广播是可选功能，静默忽略
