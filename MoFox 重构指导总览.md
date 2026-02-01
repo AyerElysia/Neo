@@ -2129,9 +2129,9 @@ def _register_router(self, info: ComponentInfo, cls: ComponentClassType) -> bool
 
 示例1:简单路由:
 ```python
-class MyAPIRouter(BaseRouterComponent):
-    component_name = "my_api"
-    component_description = "自定义API接口"
+class MyAPIRouter(BaseRouter):
+    router_name = "my_api"
+    router_description = "自定义API接口"
     
     def register_endpoints(self) -> None:
         @self.app.get("/status")
@@ -2148,9 +2148,9 @@ class MyAPIRouter(BaseRouterComponent):
 
 示例2:自定义CORS和路径:
 ```python
-class CustomAPIRouter(BaseRouterComponent):
-    component_name = "custom_api"
-    component_description = "自定义API"
+class CustomAPIRouter(BaseRouter):
+    router_name = "custom_api"
+    router_description = "自定义API"
     
     # 自定义CORS
     cors_origins = ["https://myapp.com", "https://admin.myapp.com"]
