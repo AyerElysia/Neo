@@ -4,9 +4,11 @@
 """
 
 from src.kernel.db.core.engine import (
+    configure_engine,
     close_engine,
     get_engine,
     get_engine_info,
+    reset_engine_state,
 )
 from src.kernel.db.core.exceptions import (
     DatabaseConnectionError,
@@ -21,17 +23,18 @@ from src.kernel.db.core.session import (
     reset_session_factory,
 )
 
-# TODO: Base 模型需要从 core/models 导入
-# 目前暂时定义为 Any，待 models.py 完成后再导入
+# Base 并非 kernel/db 的硬性能力边界；此处仅作为占位导出，避免破坏现有对外 API。
 from typing import Any
 
 Base = Any
 
 __all__ = [
     # 引擎
+    "configure_engine",
     "get_engine",
     "close_engine",
     "get_engine_info",
+    "reset_engine_state",
     # 会话
     "get_session_factory",
     "get_db_session",

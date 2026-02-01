@@ -15,11 +15,13 @@ API 层 (api/)：
 # 核心
 from src.kernel.db.core import (
     Base,
+    configure_engine,
     close_engine,
     get_db_session,
     get_engine,
     get_engine_info,
     get_session_factory,
+    reset_engine_state,
     reset_session_factory,
 )
 
@@ -41,12 +43,14 @@ from src.kernel.db.core.exceptions import (
 
 __all__ = [
     # 核心
+    "configure_engine",
     "Base",
     "get_engine",
     "get_session_factory",
     "get_db_session",
     "close_engine",
     "get_engine_info",
+    "reset_engine_state",
     "reset_session_factory",
     # API
     "CRUDBase",

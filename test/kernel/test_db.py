@@ -2,6 +2,8 @@
 DB 模块简化测试
 """
 
+from __future__ import annotations
+
 import pytest
 from sqlalchemy import Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, declarative_base
@@ -9,8 +11,29 @@ from sqlalchemy.orm import Mapped, mapped_column, declarative_base
 from src.kernel.db import (
     CRUDBase,
     QueryBuilder,
+    configure_engine,
     get_engine,
 )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _configure_kernel_db_for_tests(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """为测试环境配置 kernel/db 引擎。
+
+    kernel/db 不读取用户配置，因此测试作为“高层调用方”负责注入连接参数。
+    """
+    from src.kernel.db.core.engine import _build_sqlite_config
+
+    db_path = tmp_path_factory.mktemp("kernel_db") / "test.db"
+    url, engine_kwargs = _build_sqlite_config(str(db_path))
+
+    # 测试中无需跑优化逻辑，避免额外开销/偶发差异
+    configure_engine(
+        url,
+        engine_kwargs=engine_kwargs,
+        db_type="sqlite",
+        apply_optimizations=False,
+    )
 
 # 创建测试用的 Base 和模型
 TestBase = declarative_base()

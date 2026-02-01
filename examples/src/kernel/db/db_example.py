@@ -5,10 +5,37 @@
 """
 
 import asyncio
+from pathlib import Path
+
 from sqlalchemy import Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, declarative_base
 
-from src.kernel.db import CRUDBase, QueryBuilder, AggregateQuery, get_engine, close_engine
+from src.kernel.db import (
+    AggregateQuery,
+    CRUDBase,
+    QueryBuilder,
+    close_engine,
+    configure_engine,
+    get_engine,
+)
+
+
+def configure_db() -> None:
+    """示例：由高层调用方配置数据库连接参数。
+
+    kernel/db 不读取用户配置；这里直接注入 SQLite 参数。
+    """
+    db_file = Path("data") / "mofox_example.db"
+    db_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Windows 绝对路径需要转成 posix 风格以适配 SQLAlchemy URL
+    url = f"sqlite+aiosqlite:///{db_file.absolute().as_posix()}"
+    engine_kwargs = {
+        "echo": False,
+        "future": True,
+        "connect_args": {"check_same_thread": False, "timeout": 60},
+    }
+    configure_engine(url, engine_kwargs=engine_kwargs, db_type="sqlite")
 
 # 定义基类和模型
 Base = declarative_base()
@@ -262,6 +289,9 @@ async def main():
     print("=" * 50)
 
     try:
+        # 由高层注入数据库配置
+        configure_db()
+
         # 初始化数据库
         await init_database()
 

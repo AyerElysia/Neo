@@ -7,7 +7,7 @@
 """
 
 import asyncio
-import os
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -23,6 +23,79 @@ logger = get_logger("database.engine", display="DB 引擎")
 # 全局引擎实例
 _engine: AsyncEngine | None = None
 _engine_lock: asyncio.Lock | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EngineConfig:
+    """由高层传入的引擎配置。
+
+    注意：kernel/db 不负责读取用户配置，只消费调用方提供的参数。
+    """
+
+    url: str
+    engine_kwargs: dict
+    db_type: str | None = None
+    apply_optimizations: bool = True
+
+
+_engine_config: EngineConfig | None = None
+
+
+def configure_engine(
+    url: str,
+    *,
+    engine_kwargs: dict | None = None,
+    db_type: str | None = None,
+    apply_optimizations: bool = True,
+) -> None:
+    """配置数据库引擎的初始化参数（由高层调用方调用）。
+
+    典型用法：应用启动时根据用户配置/环境变量解析出 URL 与参数，然后调用本函数。
+
+    Args:
+        url: SQLAlchemy 异步 URL，例如："sqlite+aiosqlite:///path/to.db"。
+        engine_kwargs: 传给 create_async_engine 的 kwargs。
+        db_type: 可选。"sqlite" / "postgresql"；为空时将从 url 推断。
+        apply_optimizations: 是否在初始化后应用数据库特定优化。
+
+    Raises:
+        RuntimeError: 引擎已创建时禁止重新配置（请先 close_engine）。
+    """
+    global _engine_config
+
+    if _engine is not None:
+        raise RuntimeError(
+            "数据库引擎已初始化，无法重新配置；请先调用 close_engine() 再 configure_engine()"
+        )
+
+    _engine_config = EngineConfig(
+        url=url,
+        engine_kwargs=engine_kwargs or {},
+        db_type=db_type,
+        apply_optimizations=apply_optimizations,
+    )
+
+
+async def reset_engine_state() -> None:
+    """重置引擎状态（用于测试）。
+
+    - dispose 当前引擎
+    - 清理引擎实例与锁
+    - 清理已配置的 EngineConfig
+    """
+    global _engine, _engine_lock, _engine_config
+
+    await close_engine()
+    _engine_lock = None
+    _engine_config = None
+
+
+def _infer_db_type_from_url(url: str) -> str | None:
+    scheme = url.split(":", 1)[0]
+    backend = scheme.split("+", 1)[0].lower()
+    if backend in {"sqlite", "postgresql"}:
+        return backend
+    return backend or None
 
 
 async def get_engine() -> AsyncEngine:
@@ -50,37 +123,37 @@ async def get_engine() -> AsyncEngine:
             return _engine
 
         try:
-            # TODO: 从 kernel config 获取配置，待 config 模块完成后
-            # 目前使用简单的默认配置
-            db_type = "sqlite"  # 默认使用 SQLite
-            db_path = "data/mofox.db"
-
-            logger.info(f"正在初始化 {db_type.upper()} 数据库引擎...")
-
-            # 根据数据库类型构建 URL 和引擎参数
-            if db_type == "postgresql":
-                url, engine_kwargs = _build_postgresql_config(
-                    host="localhost",
-                    port=5432,
-                    user="postgres",
-                    password="password",
-                    database="mofox",
+            if _engine_config is None:
+                raise DatabaseInitializationError(
+                    "数据库引擎尚未配置；请在高层启动流程中先调用 configure_engine(url, ...)"
                 )
-            else:
-                url, engine_kwargs = _build_sqlite_config(db_path)
+
+            db_type = (
+                _engine_config.db_type or _infer_db_type_from_url(_engine_config.url)
+            )
+
+            logger.info(
+                f"正在初始化 {(db_type or 'UNKNOWN').upper()} 数据库引擎..."
+            )
 
             # 创建异步引擎
-            _engine = create_async_engine(url, **engine_kwargs)
+            _engine = create_async_engine(
+                _engine_config.url,
+                **(_engine_config.engine_kwargs or {}),
+            )
 
             # 应用数据库特定的优化
-            if db_type == "sqlite":
-                await _enable_sqlite_optimizations(_engine)
-            elif db_type == "postgresql":
-                await _enable_postgresql_optimizations(_engine)
+            if _engine_config.apply_optimizations:
+                if db_type == "sqlite":
+                    await _enable_sqlite_optimizations(_engine)
+                elif db_type == "postgresql":
+                    await _enable_postgresql_optimizations(_engine)
 
-            logger.info(f"{db_type.upper()} 数据库引擎初始化成功")
+            logger.info(f"{(db_type or 'UNKNOWN').upper()} 数据库引擎初始化成功")
             return _engine
 
+        except DatabaseInitializationError:
+            raise
         except Exception as e:
             logger.error(f"数据库引擎初始化失败: {e}")
             raise DatabaseInitializationError(f"引擎初始化失败: {e}") from e

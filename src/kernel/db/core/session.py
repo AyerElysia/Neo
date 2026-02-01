@@ -100,9 +100,19 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
     async with session_factory() as session:
         try:
-            # 应用数据库特定设置
-            # TODO: 从 config 获取 db_type，待 config 模块完成后
-            await _apply_session_settings(session, "sqlite")
+            # 应用数据库特定设置（从引擎推断，不读取用户配置）
+            try:
+                bind = getattr(session, "bind", None) or session.get_bind()
+                db_type = getattr(bind, "name", None)
+                if not db_type and hasattr(bind, "dialect"):
+                    db_type = getattr(bind.dialect, "name", None)
+            except Exception:
+                db_type = None
+
+            if isinstance(db_type, str):
+                db_type = db_type.lower()
+
+            await _apply_session_settings(session, db_type or "")
 
             yield session
 
