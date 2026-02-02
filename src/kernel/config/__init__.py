@@ -26,10 +26,15 @@
 from __future__ import annotations
 
 from .core import ConfigBase, SectionBase, config_section, Field
+from .types import ConfigData, SectionData, TOMLData
 
 __all__ = [
     "ConfigBase",
     "SectionBase",
     "config_section",
     "Field",
+    # 类型定义
+    "ConfigData",
+    "SectionData",
+    "TOMLData",
 ]

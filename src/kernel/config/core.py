@@ -14,6 +14,8 @@ from typing import Any, Callable, TypeVar, Self
 import tomllib
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from .types import ConfigData, TOMLData
+
 
 SectionT = TypeVar("SectionT", bound="SectionBase")
 
@@ -58,7 +60,7 @@ class ConfigBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
+    def from_dict(cls, data: ConfigData) -> Self:
         """从字典加载配置。"""
 
         return cls.model_validate(data)
@@ -99,10 +101,10 @@ class ConfigBase(BaseModel):
         return cls.from_dict(merged)
 
     @classmethod
-    def default(cls) -> dict[str, Any]:
+    def default(cls) -> ConfigData:
         """生成默认配置字典。"""
 
-        return cls().model_dump()
+        return cls().model_dump()  # type: ignore[return-value]
 
 
 def _normalize_newlines(text: str) -> str:
@@ -179,14 +181,14 @@ def _iter_sections(config_model: type[ConfigBase]) -> list[tuple[str, type[Secti
 
 def _merge_with_model_defaults(
     config_model: type[ConfigBase],
-    raw: dict[str, Any],
-) -> dict[str, Any]:
+    raw: TOMLData,
+) -> ConfigData:
     """将 raw 与模型默认值合并，并移除模型未定义的节/字段。
 
     保留 raw 中能通过字段类型校验的值；不合法的值回退到默认值/占位值。
     """
 
-    merged: dict[str, Any] = {}
+    merged: ConfigData = {}
     for section_name, section_model in _iter_sections(config_model):
         raw_section = raw.get(section_name)
         if not isinstance(raw_section, dict):
@@ -242,7 +244,7 @@ def _placeholder_for_type(annotation: Any) -> Any:
 
 def _render_toml_with_signature(
     config_model: type[ConfigBase],
-    data: dict[str, Any],
+    data: ConfigData,
 ) -> str:
     """按模型签名生成带注释的 TOML（确定性输出）。"""
 

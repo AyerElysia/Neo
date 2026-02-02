@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.kernel.logger import get_logger
 
-from .engine import get_engine
+from .engine import get_engine, get_configured_db_type
 
 logger = get_logger("database.session", display="DB 会话")
 
@@ -100,19 +100,8 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
     async with session_factory() as session:
         try:
-            # 从 engine 配置获取 db_type（避免运行时反射）
-            from .engine import _engine_config
-            
-            db_type = None
-            if _engine_config:
-                db_type = _engine_config.db_type
-                if not db_type:
-                    # 从 URL 推断
-                    url = _engine_config.url.lower()
-                    if 'sqlite' in url:
-                        db_type = 'sqlite'
-                    elif 'postgresql' in url:
-                        db_type = 'postgresql'
+            # 使用公共函数获取 db_type
+            db_type = get_configured_db_type()
 
             if db_type:
                 await _apply_session_settings(session, db_type)

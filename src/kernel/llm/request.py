@@ -12,7 +12,7 @@ LLMRequest 支持：
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Self
 
 from .exceptions import LLMConfigurationError, classify_exception
@@ -23,6 +23,7 @@ from .policy import RoundRobinPolicy
 from .policy.base import Policy
 from .response import LLMResponse
 from .roles import ROLE
+from .types import ModelEntry, ModelSet
 
 
 def _normalize_tool_result_payload(payload: LLMPayload) -> LLMPayload:
@@ -58,17 +59,15 @@ def _extract_tools(payloads: list[LLMPayload]) -> list[Tool]:
 class LLMRequest:
     """LLMRequest：构建 payload 并执行请求。"""
 
-    model_set: Any
+    model_set: ModelSet
     request_name: str = ""
 
-    payloads: list[LLMPayload] = None  # type: ignore[assignment]
+    payloads: list[LLMPayload] = field(default_factory=list)
     policy: Policy | None = None
     clients: ModelClientRegistry | None = None
     enable_metrics: bool = True  # 是否启用指标收集
 
     def __post_init__(self) -> None:
-        if self.payloads is None:
-            self.payloads = []
         if self.policy is None:
             self.policy = RoundRobinPolicy()
         if self.clients is None:
@@ -110,8 +109,6 @@ class LLMRequest:
 
             # 开始计时
             timer = RequestTimer()
-            success = False
-            collected_error: BaseException | None = None
 
             try:
                 with timer:
@@ -124,7 +121,6 @@ class LLMRequest:
                         stream=stream,
                     )
 
-                success = True
                 resp = LLMResponse(
                     _stream=stream_iter,
                     _upper=self,
@@ -159,7 +155,6 @@ class LLMRequest:
                 return resp
                 
             except BaseException as e:
-                collected_error = e
                 # 将原始异常转换为标准化 LLM 异常
                 classified_error = classify_exception(e, model=model_identifier)
                 last_error = classified_error
@@ -186,7 +181,7 @@ class LLMRequest:
         raise last_error
 
 
-def _validate_model_entry(model: dict[str, Any]) -> dict[str, Any]:
+def _validate_model_entry(model: dict[str, Any]) -> ModelEntry:
     required = [
         "api_provider",
         "base_url",
@@ -210,10 +205,10 @@ def _validate_model_entry(model: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(model.get("extra_params"), dict):
         raise LLMConfigurationError("model.extra_params 必须是 dict")
 
-    return model
+    return model  # type: ignore[return-value]
 
 
-def _validate_model_set(model_set: Any) -> list[dict[str, Any]]:
+def _validate_model_set(model_set: Any) -> ModelSet:
     if not isinstance(model_set, list) or not model_set:
         raise LLMConfigurationError("model_set 必须是非空 list[dict]")
     if not all(isinstance(x, dict) for x in model_set):

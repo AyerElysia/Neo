@@ -1,4 +1,3 @@
-"""Standard I/O payloads."""
 """LLM payload models."""
 
 from .content import Action, Audio, Content, Image, Text

@@ -14,6 +14,7 @@
 from .roles import ROLE
 from .request import LLMRequest
 from .response import LLMResponse
+from .types import ModelEntry, ModelSet
 
 from .payload import (
 	Action,
@@ -57,6 +58,9 @@ __all__ = [
 	"LLMRequest",
 	"LLMResponse",
 	"LLMPayload",
+	# 类型定义
+	"ModelEntry",
+	"ModelSet",
 	# 内容类型
 	"Content",
 	"Text",

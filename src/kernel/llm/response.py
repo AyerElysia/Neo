@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Awaitable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Self, TYPE_CHECKING
 
 from .exceptions import LLMResponseConsumedError
@@ -23,6 +23,7 @@ from .roles import ROLE
 
 if TYPE_CHECKING:  # pragma: no cover
     from .request import LLMRequest
+    from .types import ModelSet
 
 
 @dataclass(slots=True)
@@ -34,16 +35,12 @@ class LLMResponse:
     _auto_append_response: bool
 
     payloads: list[LLMPayload]
-    model_set: Any
+    model_set: "ModelSet"
 
     message: str | None = None
-    call_list: list[ToolCall] = None  # type: ignore[assignment]
+    call_list: list[ToolCall] = field(default_factory=list)
 
     _consumed: bool = False
-
-    def __post_init__(self) -> None:
-        if self.call_list is None:
-            self.call_list = []
 
     def __await__(self):
         return self._collect_full_response().__await__()

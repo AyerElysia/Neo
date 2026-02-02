@@ -48,9 +48,10 @@ class EventDecision(str, Enum):
 
 
 EventHandlerResult = tuple[EventDecision, EventParams]
+# 支持同步和异步事件处理器
 EventHandlerCallable = Callable[
     [str, EventParams],
-    EventHandlerResult | tuple[str, EventParams] | Awaitable[EventHandlerResult | tuple[str, EventParams]],
+    EventHandlerResult | Awaitable[EventHandlerResult],
 ]
 
 

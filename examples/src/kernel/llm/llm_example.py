@@ -28,6 +28,7 @@ from src.kernel.llm import (
     get_global_collector,
     LLMRateLimitError,
     LLMTimeoutError,
+    ModelSet
 )
 
 from src.kernel.logger import get_logger, COLOR
@@ -71,7 +72,7 @@ class SearchTool:
         }
 
 
-def build_model_set() -> list[dict[str, Any]]:
+def build_model_set() -> ModelSet:
     return [
         {
             "api_provider": "OpenAI",

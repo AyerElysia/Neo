@@ -91,11 +91,35 @@ async def reset_engine_state() -> None:
 
 
 def _infer_db_type_from_url(url: str) -> str | None:
+    """从 URL 推断数据库类型
+    
+    Args:
+        url: SQLAlchemy 数据库 URL
+        
+    Returns:
+        str | None: 数据库类型或 None
+    """
     scheme = url.split(":", 1)[0]
     backend = scheme.split("+", 1)[0].lower()
     if backend in {"sqlite", "postgresql"}:
         return backend
     return backend or None
+
+
+def get_configured_db_type() -> str | None:
+    """获取已配置的数据库类型
+    
+    Returns:
+        str | None: 数据库类型 (sqlite/postgresql) 或 None
+    """
+    if _engine_config is None:
+        return None
+    
+    db_type = _engine_config.db_type
+    if db_type:
+        return db_type
+    
+    return _infer_db_type_from_url(_engine_config.url)
 
 
 async def get_engine() -> AsyncEngine:

@@ -244,7 +244,7 @@ class Logger:
 
             # 尝试发布事件（即发即弃）
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 # 有运行中的事件循环
                 # 直接使用 ensure_future 安排任务
                 asyncio.ensure_future(event_bus.publish(LOG_OUTPUT_EVENT, log_data))
