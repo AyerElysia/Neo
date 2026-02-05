@@ -50,7 +50,7 @@ from .logger import (
     get_logger,
     remove_logger,
     get_all_loggers,
-    clear_all_loggers,
+    shutdown_logger_system,
     install_rich_traceback_formatter,
     LOG_OUTPUT_EVENT,
 )
@@ -61,6 +61,7 @@ __all__ = [
     # 全局初始化
     "initialize_logger_system",
     "get_global_log_config",
+    "shutdown_logger_system",
     # 主要接口
     "get_logger",
     "Logger",
@@ -71,7 +72,6 @@ __all__ = [
     # 辅助函数
     "remove_logger",
     "get_all_loggers",
-    "clear_all_loggers",
     "get_rich_color",
     "install_rich_traceback_formatter",
     "DEFAULT_LEVEL_COLORS",

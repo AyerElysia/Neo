@@ -85,7 +85,7 @@ class PluginManager:
             logger.error(f"插件 '{plugin_name}' 加载失败: {error_msg}")
             return False
 
-        # 4. 实例化插件
+        # 4. 实例化插件（先用 None，之后检查是否有 Config 组件）
         try:
             plugin_instance = plugin_class(config=None)  # type: ignore
         except Exception as e:
@@ -93,6 +93,21 @@ class PluginManager:
             self._failed_plugins[plugin_name] = error_msg
             logger.error(f"插件 '{plugin_name}' 加载失败: {error_msg}")
             return False
+
+        # 4.1 检查是否有 Config 组件，如果有则加载配置
+        from src.core.components.base.config import BaseConfig
+        from src.core.managers.config_manager import get_config_manager
+
+        has_config = False
+        for component_cls in plugin_instance.get_components():
+            if isinstance(component_cls, type) and issubclass(component_cls, BaseConfig):
+                has_config = True
+                config = get_config_manager().load_config(plugin_name, component_cls)
+                plugin_instance.config = config
+                break
+
+        if not has_config:
+            logger.debug(f"插件 '{plugin_name}' 没有 Config 组件，使用空配置")
 
         # 5. 注册组件到全局注册表
         await self._register_components(plugin_instance)

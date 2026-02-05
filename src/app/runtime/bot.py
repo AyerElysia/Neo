@@ -158,7 +158,7 @@ class Bot:
         from src.kernel.logger import get_logger, initialize_logger_system
 
         initialize_logger_system(log_dir=self.log_dir, log_level=self.config.bot.log_level)
-        self.logger = get_logger("bot", enable_file=True, log_dir=self.log_dir)
+        self.logger = get_logger("bot")
         self.ui.update_phase_status("日志", "已初始化")
 
         # Step 3: Event Bus
@@ -228,13 +228,14 @@ class Bot:
         # Step 2: 导入其他manager以初始化
         from src.core.managers import (
             initialize_adapter_manager,
-            get_plugin_manager,
-            get_action_manager,
-            get_chatter_manager,
-            get_command_manager,
-            get_service_manager,         
+            initialize_router_manager,
+            initialize_event_manager     
         )
+
         initialize_adapter_manager()
+        initialize_router_manager()
+        initialize_event_manager()
+
         self.ui.update_phase_status("核心管理器", "已初始化")
 
     async def _discover_plugins(self) -> None:
@@ -301,7 +302,7 @@ class Bot:
         # 启动调度器
         await self.scheduler.start()
         self._stats["scheduler_running"] = True
-
+        
         # 启动实时仪表盘（如果 UI 级别为 VERBOSE）
         if self.ui.level == UILevel.VERBOSE:
             self.ui.start_live_dashboard()
@@ -462,27 +463,36 @@ class Bot:
             await self.scheduler.stop()
             self._stats["scheduler_running"] = False
 
-            # 4. 停止任务管理器（取消所有活动任务）
+            # 4. 停止 WatchDog
+            if self.watchdog:
+                self.watchdog.stop()
+
+            # 5. 停止任务管理器（取消所有活动任务）
             active_tasks = self.task_manager.get_active_tasks()
             for task_info in active_tasks:
-                self.task_manager.cancel_task(task_info.id)
+                self.task_manager.cancel_task(task_info.task_id)
+
+            # 等待所有非守护任务完成
+            await self.task_manager.wait_all_tasks()
+
             # 清理已完成的任务
             self.task_manager.cleanup_tasks()
 
-            # 5. 关闭数据库
+            # 6. 关闭数据库
             from src.kernel.db import close_engine
 
             await close_engine()
             self._stats["db_connected"] = False
 
-            # 6. 关闭向量数据库
+            # 7. 关闭向量数据库
             from src.kernel.vector_db import close_all_vector_db_services
 
             await close_all_vector_db_services()
 
-            # 7. 关闭日志
-            if self.logger:
-                self.logger.close()
+            # 8. 关闭日志系统（停止事件广播）
+            from src.kernel.logger import shutdown_logger_system
+
+            shutdown_logger_system()
 
             self.ui.display_success("关闭完成")
 

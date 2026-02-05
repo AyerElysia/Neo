@@ -88,13 +88,8 @@ class SignalHandler:
                 )
                 self.shutdown_requested.set()
 
-                # 在主事件循环中调度关闭
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.call_soon_threadsafe(lambda: asyncio.create_task(self.bot.shutdown()))
-                except RuntimeError:
-                    # 没有运行中的事件循环
-                    pass
+                # 设置 _running 标志，让主循环自然退出
+                self.bot._running = False
 
             # 第二次信号（3 秒内）：强制立即关闭
             elif self.signal_count >= 2:

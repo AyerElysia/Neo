@@ -6,6 +6,7 @@
 
 from typing import Type
 
+
 from src.kernel.logger import get_logger
 from src.core.components.base.config import BaseConfig
 
@@ -213,3 +214,30 @@ class ConfigManager:
                 logger.error(f"初始化配置失败: {signature} - {e}")
 
 
+# 全局配置管理器实例
+_global_config_manager: "ConfigManager | None" = None
+
+
+def get_config_manager() -> "ConfigManager":
+    """获取全局配置管理器实例。
+
+    Returns:
+        ConfigManager: 全局配置管理器单例
+
+    Examples:
+        >>> manager = get_config_manager()
+        >>> config = manager.load_config("my_plugin", MyPluginConfig)
+    """
+    global _global_config_manager
+    if _global_config_manager is None:
+        _global_config_manager = ConfigManager()
+    return _global_config_manager
+
+
+def reset_config_manager() -> None:
+    """重置全局配置管理器。
+
+    主要用于测试场景，确保测试之间不会相互影响。
+    """
+    global _global_config_manager
+    _global_config_manager = None

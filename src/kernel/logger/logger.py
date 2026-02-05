@@ -46,6 +46,10 @@ _global_config: dict[str, Any] = {
 }
 _config_lock = threading.Lock()
 
+# 全局共享的文件处理器（所有logger共享同一个）
+_global_file_handler: FileHandler | None = None
+_file_handler_lock = threading.Lock()
+
 # 日志等级优先级映射
 _LOG_LEVEL_PRIORITY = {
     "DEBUG": 0,
@@ -80,9 +84,6 @@ class Logger:
         color: COLOR | str = COLOR.WHITE,
         console: Console | None = None,
         enable_file: bool = False,
-        log_dir: str | Path = "logs",
-        file_rotation: RotationMode = RotationMode.DATE,
-        max_file_size: int = 10 * 1024 * 1024,  # 10MB
         enable_event_broadcast: bool = True,
         log_level: str | None = None,
     ) -> None:
@@ -93,10 +94,7 @@ class Logger:
             display: 显示名称，如果为 None 则使用 name
             color: 日志颜色
             console: rich.Console 实例，如果为 None 则创建默认实例
-            enable_file: 是否启用文件输出
-            log_dir: 日志文件目录
-            file_rotation: 文件轮转模式
-            max_file_size: 单个日志文件最大大小（字节），仅在 SIZE 模式下生效
+            enable_file: 是否启用文件输出（使用全局共享的文件处理器）
             enable_event_broadcast: 是否启用事件广播（发布到 on_log_output 事件）
             log_level: 日志等级，如果为 None 则使用全局配置
         """
@@ -122,16 +120,6 @@ class Logger:
             )
         else:
             self.console = console
-
-        # 创建文件处理器（如果启用）
-        self.file_handler: FileHandler | None = None
-        if enable_file:
-            self.file_handler = FileHandler(
-                log_dir=log_dir,
-                base_filename=name,
-                rotation_mode=file_rotation,
-                max_size=max_file_size,
-            )
 
     def debug(self, message: str, **kwargs: Any) -> None:
         """输出 DEBUG 级别日志
@@ -226,15 +214,17 @@ class Logger:
                 self.console.print(metadata_text)
 
             # 输出到文件（如果启用）
-            if self._enable_file and self.file_handler:
-                # 构建纯文本日志（不带颜色代码）
-                log_line = f"[{timestamp_short}] {self.display} | {level} | {message}"
-                if all_metadata:
-                    metadata_str = " | ".join([f"{k}={v}" for k, v in all_metadata.items()])
-                    log_line += f"\n  {metadata_str}"
-                log_line += "\n"
+            if self._enable_file:
+                global _global_file_handler
+                if _global_file_handler is not None:
+                    # 构建纯文本日志（不带颜色代码）
+                    log_line = f"[{timestamp_short}] {self.display} | {level} | {message}"
+                    if all_metadata:
+                        metadata_str = " | ".join([f"{k}={v}" for k, v in all_metadata.items()])
+                        log_line += f"\n  {metadata_str}"
+                    log_line += "\n"
 
-                self.file_handler.write(log_line)
+                    _global_file_handler.write(log_line)
 
             # 发布事件广播（如果启用）
             if self._enable_event_broadcast:
@@ -388,44 +378,6 @@ class Logger:
         with self._lock:
             self.console.print(*args, **kwargs)
 
-    def enable_file_output(
-        self,
-        log_dir: str | Path = "logs",
-        file_rotation: RotationMode = RotationMode.DATE,
-        max_file_size: int = 10 * 1024 * 1024,
-    ) -> None:
-        """启用文件输出
-
-        Args:
-            log_dir: 日志文件目录
-            file_rotation: 文件轮转模式
-            max_file_size: 单个日志文件最大大小（字节）
-        """
-        with self._lock:
-            if self.file_handler is None:
-                self.file_handler = FileHandler(
-                    log_dir=log_dir,
-                    base_filename=self.name,
-                    rotation_mode=file_rotation,
-                    max_size=max_file_size,
-                )
-                self._enable_file = True
-
-    def disable_file_output(self) -> None:
-        """禁用文件输出"""
-        with self._lock:
-            self._enable_file = False
-            if self.file_handler:
-                self.file_handler.close()
-                self.file_handler = None
-
-    def close(self) -> None:
-        """关闭日志记录器，释放资源"""
-        with self._lock:
-            if self.file_handler:
-                self.file_handler.close()
-                self.file_handler = None
-
     def __repr__(self) -> str:
         """日志记录器字符串表示"""
         file_status = "enabled" if self._enable_file else "disabled"
@@ -443,15 +395,18 @@ _lock = threading.Lock()
 def initialize_logger_system(
     log_dir: str | Path = "logs",
     log_level: str = "DEBUG",
-    enable_file: bool = False,
+    enable_file: bool = True,
     file_rotation: RotationMode = RotationMode.DATE,
     max_file_size: int = 10 * 1024 * 1024,
     enable_event_broadcast: bool = True,
+    log_filename: str = "mofox",
 ) -> None:
     """初始化日志系统全局配置
 
     此方法应在核心启动时调用，用于设置全局的日志配置。
     之后创建的所有logger将默认使用这些配置（除非在创建时显式指定）。
+    
+    所有logger将共享同一个日志文件，不会为每个logger创建单独的文件。
 
     Args:
         log_dir: 日志文件目录路径
@@ -460,6 +415,7 @@ def initialize_logger_system(
         file_rotation: 文件轮转模式
         max_file_size: 单个日志文件最大大小（字节）
         enable_event_broadcast: 是否默认启用事件广播
+        log_filename: 日志文件基础名称（所有logger共享）
 
     Example:
         >>> from src.kernel.logger import initialize_logger_system
@@ -468,8 +424,11 @@ def initialize_logger_system(
         ...     log_dir="logs/app",
         ...     log_level="INFO",
         ...     enable_file=True,
+        ...     log_filename="mofox",
         ... )
     """
+    global _global_file_handler
+    
     with _config_lock:
         _global_config["log_dir"] = log_dir
         _global_config["log_level"] = log_level.upper()
@@ -477,7 +436,25 @@ def initialize_logger_system(
         _global_config["file_rotation"] = file_rotation
         _global_config["max_file_size"] = max_file_size
         _global_config["enable_event_broadcast"] = enable_event_broadcast
-
+    
+    # 创建或重新创建全局文件处理器
+    with _file_handler_lock:
+        # 关闭旧的文件处理器（如果存在）
+        if _global_file_handler is not None:
+            _global_file_handler.close()
+        
+        # 创建新的文件处理器
+        if enable_file:
+            _global_file_handler = FileHandler(
+                log_dir=log_dir,
+                base_filename=log_filename,
+                rotation_mode=file_rotation,
+                max_size=max_file_size,
+            )
+        else:
+            _global_file_handler = None
+    # 安装 rich traceback
+    install_rich_traceback_formatter()
 
 def get_global_log_config() -> dict[str, Any]:
     """获取全局日志配置
@@ -495,13 +472,12 @@ def get_logger(
     color: COLOR | str = COLOR.WHITE,
     console: Console | None = None,
     enable_file: bool | None = None,
-    log_dir: str | Path | None = None,
-    file_rotation: RotationMode | None = None,
-    max_file_size: int | None = None,
     enable_event_broadcast: bool | None = None,
     log_level: str | None = None,
 ) -> Logger:
     """获取或创建日志记录器
+    
+    所有logger共享同一个日志文件，文件配置通过 initialize_logger_system() 设置。
 
     Args:
         name: 日志记录器名称（唯一标识）
@@ -509,9 +485,6 @@ def get_logger(
         color: 日志颜色
         console: rich.Console 实例
         enable_file: 是否启用文件输出（None 则使用全局配置）
-        log_dir: 日志文件目录（None 则使用全局配置）
-        file_rotation: 文件轮转模式（None 则使用全局配置）
-        max_file_size: 单个日志文件最大大小（字节）（None 则使用全局配置）
         enable_event_broadcast: 是否启用事件广播（None 则使用全局配置）
         log_level: 日志等级（None 则使用全局配置）
 
@@ -519,7 +492,7 @@ def get_logger(
         Logger: 日志记录器实例
 
     Example:
-        >>> from src.kernel.logger import get_logger, COLOR, RotationMode, initialize_logger_system
+        >>> from src.kernel.logger import get_logger, COLOR, initialize_logger_system
         >>> # 先初始化全局配置
         >>> initialize_logger_system(log_dir="logs", log_level="INFO", enable_file=True)
         >>> # 使用全局配置创建logger
@@ -534,9 +507,6 @@ def get_logger(
             # 使用全局配置作为默认值
             with _config_lock:
                 actual_enable_file = enable_file if enable_file is not None else _global_config["enable_file"]
-                actual_log_dir = log_dir if log_dir is not None else _global_config["log_dir"]
-                actual_file_rotation = file_rotation if file_rotation is not None else _global_config["file_rotation"]
-                actual_max_file_size = max_file_size if max_file_size is not None else _global_config["max_file_size"]
                 actual_enable_event_broadcast = (
                     enable_event_broadcast if enable_event_broadcast is not None 
                     else _global_config["enable_event_broadcast"]
@@ -549,9 +519,6 @@ def get_logger(
                 color=color,
                 console=console,
                 enable_file=actual_enable_file,
-                log_dir=actual_log_dir,
-                file_rotation=actual_file_rotation,
-                max_file_size=actual_max_file_size,
                 enable_event_broadcast=actual_enable_event_broadcast,
                 log_level=actual_log_level,
             )
@@ -565,9 +532,7 @@ def remove_logger(name: str) -> None:
         name: 日志记录器名称
     """
     with _lock:
-        logger = _loggers.pop(name, None)
-        if logger:
-            logger.close()
+        _loggers.pop(name, None)
 
 
 def get_all_loggers() -> dict[str, Logger]:
@@ -579,13 +544,19 @@ def get_all_loggers() -> dict[str, Logger]:
     with _lock:
         return dict(_loggers)
 
+def shutdown_logger_system() -> None:
+    """关闭日志系统，释放所有资源
+    
+    包括关闭全局文件处理器和清除所有logger。
+    建议在程序退出时调用。
+    """
+    global _global_file_handler
 
-def clear_all_loggers() -> None:
-    """清除所有日志记录器"""
-    with _lock:
-        for logger in _loggers.values():
-            logger.close()
-        _loggers.clear()
+    # 关闭全局文件处理器
+    with _file_handler_lock:
+        if _global_file_handler is not None:
+            _global_file_handler.close()
+            _global_file_handler = None
 
 
 def install_rich_traceback_formatter():
@@ -601,5 +572,4 @@ def install_rich_traceback_formatter():
     )
 
 
-# 自动安装 rich traceback
-install_rich_traceback_formatter()
+

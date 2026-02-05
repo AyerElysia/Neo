@@ -7,7 +7,10 @@
 """
 
 import asyncio
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    pass
 
 from src.kernel.logger import get_logger
 from src.kernel.event import get_event_bus, EventDecision
@@ -377,3 +380,47 @@ def get_event_manager() -> EventManager:
     if _event_manager is None:
         _event_manager = EventManager()
     return _event_manager
+
+
+def reset_event_manager() -> None:
+    """重置全局事件管理器。
+
+    主要用于测试场景，确保测试之间不会相互影响。
+    """
+    global _event_manager
+    _event_manager = None
+
+
+def initialize_event_manager() -> None:
+    """初始化事件管理器。
+
+    主要用于在应用启动时进行必要的初始化操作。
+    订阅插件加载完成事件，在所有插件加载完成后自动构建事件订阅映射。
+    """
+    from src.core.components.types import EventType
+
+    get_event_bus().subscribe(EventType.ON_ALL_PLUGIN_LOADED, on_all_plugins_loaded)
+
+
+async def on_all_plugins_loaded(_: str, params: Dict[str, Any]) -> Tuple[EventDecision, Dict[str, Any]]:
+    """所有插件加载完毕后，构建事件订阅映射。
+
+    Args:
+        event_name: 事件名称
+        params: 事件参数字典
+
+    Returns:
+        tuple[EventDecision, dict]: (事件决策, 事件参数)
+    """
+    logger.info("开始构建事件订阅映射...")
+
+    # 构建订阅映射
+    manager = get_event_manager()
+    try:
+        await manager.build_subscription_map()
+        logger.info("✅ 事件订阅映射构建完成")
+    except Exception as e:
+        logger.error(f"❌ 构建事件订阅映射时发生异常: {e}")
+        return (EventDecision.PASS, params)
+
+    return (EventDecision.SUCCESS, params)

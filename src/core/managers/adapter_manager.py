@@ -354,7 +354,6 @@ async def on_all_plugins_loaded(_: str, params: dict) -> tuple[EventDecision, di
             success = await manager.start_adapter(adapter_signature)
             if success:
                 started_adapters.append(adapter_signature)
-                logger.info(f"✅ 自动启动适配器: {adapter_signature}")
             else:
                 failed_adapters.append(adapter_signature)
                 logger.error(f"❌ 自动启动适配器失败: {adapter_signature}")

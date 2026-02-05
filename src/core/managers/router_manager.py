@@ -7,6 +7,9 @@ Router 提供基于 FastAPI 的 HTTP 路由接口。
 
 from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from src.kernel.event import EventDecision
+
 from src.kernel.logger import get_logger
 
 from src.core.components.registry import get_global_registry
@@ -383,3 +386,58 @@ def get_router_manager() -> RouterManager:
     if _global_router_manager is None:
         _global_router_manager = RouterManager()
     return _global_router_manager
+
+
+def reset_router_manager() -> None:
+    """重置全局 Router 管理器。
+
+    主要用于测试场景，确保测试之间不会相互影响。
+    """
+    global _global_router_manager
+    _global_router_manager = None
+
+
+def initialize_router_manager() -> None:
+    """初始化 Router 管理器。
+
+    主要用于在应用启动时进行必要的初始化操作。
+    订阅插件加载完成事件，在所有插件加载完成后自动挂载所有 Router。
+    """
+    from src.kernel.event import get_event_bus
+    from src.core.components.types import EventType
+
+    get_event_bus().subscribe(EventType.ON_ALL_PLUGIN_LOADED, on_all_plugins_loaded)
+
+
+async def on_all_plugins_loaded(_: str, params: dict) -> tuple["EventDecision", dict]:
+    """所有插件加载完毕后，挂载所有注册的 Router。
+
+    Args:
+        event_name: 事件名称
+        params: 事件参数字典
+
+    Returns:
+        tuple[EventDecision, dict]: (事件决策, 事件参数)
+    """
+    from src.kernel.event import EventDecision
+
+    # 通过 ComponentRegistry 获取所有类型为 ROUTER 的组件
+    registry = get_global_registry()
+    router_components = registry.get_by_type(ComponentType.ROUTER)
+
+    if not router_components:
+        logger.info("没有注册任何 Router")
+        return (EventDecision.SUCCESS, params)
+
+    logger.info(f"发现 {len(router_components)} 个 Router，开始挂载...")
+
+    # 挂载所有 Router
+    manager = get_router_manager()
+    try:
+        await manager.mount_all_routers()
+        logger.info("✅ 所有 Router 挂载完成")
+    except Exception as e:
+        logger.error(f"❌ 挂载 Router 时发生异常: {e}")
+        return (EventDecision.PASS, params)
+
+    return (EventDecision.SUCCESS, params)

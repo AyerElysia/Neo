@@ -9,6 +9,7 @@ Logger 模块提供了一个统一的、功能完整的日志系统，基于 Pyt
 - **彩色输出**：支持丰富的颜色主题和日志级别区分
 - **元数据跟踪**：为每条日志附加上下文信息
 - **多种输出方式**：控制台、文件、rich 面板、事件广播
+- **统一日志文件**：所有logger共享同一个日志文件，便于集中管理和查看
 - **文件轮转**：支持按日期、按大小或不轮转三种模式
 - **线程安全**：使用锁保护并发访问
 - **异常格式化**：自动使用 rich 格式化异常堆栈跟踪
@@ -17,12 +18,29 @@ Logger 模块提供了一个统一的、功能完整的日志系统，基于 Pyt
 
 ## 快速开始
 
+### 全局配置（推荐）
+
+在应用启动时初始化全局日志配置，所有logger将共享这些配置：
+
+```python
+from kernel.logger import initialize_logger_system, RotationMode
+
+# 初始化全局日志系统
+initialize_logger_system(
+    log_dir="logs",                      # 日志目录
+    log_level="INFO",                    # 全局日志等级
+    enable_file=True,                    # 启用文件输出
+    file_rotation=RotationMode.DATE,     # 按日期轮转
+    log_filename="mofox"                 # 统一日志文件名（所有logger共享）
+)
+```
+
 ### 基础用法
 
 ```python
 from kernel.logger import get_logger, COLOR
 
-# 创建一个日志记录器
+# 创建日志记录器（自动使用全局配置）
 logger = get_logger("my_app", display="MyApp", color=COLOR.BLUE)
 
 # 输出各级别的日志
@@ -40,6 +58,35 @@ logger.critical("这是严重错误")
 [14:30:45] MyApp | WARNING | 这是警告
 [14:30:45] MyApp | ERROR | 这是错误
 [14:30:45] MyApp | CRITICAL | 这是严重错误
+```
+
+### 多个Logger共享日志文件
+
+```python
+from kernel.logger import initialize_logger_system, get_logger, COLOR
+
+# 初始化全局日志系统
+initialize_logger_system(
+    log_dir="logs",
+    log_level="INFO",
+    enable_file=True,
+    log_filename="mofox"  # 所有logger都写入 mofox_YYYY-MM-DD.log
+)
+
+# 创建多个logger
+logger_core = get_logger("core", display="核心", color=COLOR.BLUE)
+logger_plugin = get_logger("plugin", display="插件", color=COLOR.GREEN)
+logger_event = get_logger("event", display="事件", color=COLOR.YELLOW)
+
+# 所有日志都会输出到同一个文件
+logger_core.info("核心系统启动")
+logger_plugin.info("加载插件")
+logger_event.info("事件总线初始化")
+
+# 日志文件内容：
+# [14:30:45] 核心 | INFO | 核心系统启动
+# [14:30:45] 插件 | INFO | 加载插件
+# [14:30:45] 事件 | INFO | 事件总线初始化
 ```
 
 ### 启用文件输出
