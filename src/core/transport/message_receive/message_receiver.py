@@ -95,13 +95,6 @@ class MessageReceiver:
             # 4. 触发接收后事件
             await self._emit_post_receive_event(message)
 
-        except ValueError as e:
-            logger.error(f"消息格式错误: {e}")
-            await self._emit_error_event(envelope, e)
-        except Exception as e:
-            logger.error(f"处理消息信封失败: {e}", exc_info=True)
-            await self._emit_error_event(envelope, e)
-
     async def _emit_pre_receive_event(
         self,
         message: "Message",
@@ -139,28 +132,6 @@ class MessageReceiver:
         # 可以添加更多后处理逻辑
         # 目前暂无后处理事件
         pass
-
-    async def _emit_error_event(self, envelope: MessageEnvelope, error: Exception) -> None:
-        """触发错误事件。
-
-        Args:
-            envelope: 消息信封
-            error: 异常对象
-        """
-        if self._event_manager:
-            try:
-                from src.core.components.types import EventType
-
-                await self._event_manager.publish_event(
-                    EventType.ON_ERROR,
-                    {
-                        "envelope": envelope,
-                        "error": error,
-                    },
-                )
-            except Exception as e:
-                logger.warning(f"触发错误事件失败: {e}")
-
 
 # 全局单例
 _global_message_receiver: "MessageReceiver | None" = None

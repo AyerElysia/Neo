@@ -49,11 +49,11 @@ class EventType(str, Enum):
     ON_STOP = "on_stop"
     ON_MESSAGE_RECEIVED = "on_message_received"
     ON_MESSAGE_SENT = "on_message_sent"
+    ON_NOTICE_RECEIVED = "on_notice_received"
     ON_ALL_PLUGIN_LOADED = "on_all_plugin_loaded"
     ON_PLUGIN_UNLOADED = "on_plugin_unloaded"
     ON_COMPONENT_LOADED = "on_component_loaded"
     ON_COMPONENT_UNLOADED = "on_component_unloaded"
-    ON_ERROR = "on_error"
     CUSTOM = "custom"  # 用于自定义事件
 
 
