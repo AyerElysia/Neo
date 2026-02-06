@@ -6,7 +6,7 @@ from typing import Any
 from ..exceptions import LLMConfigurationError
 from .base import ChatModelClient
 from .openai_client import OpenAIChatClient
-
+from ..types import ModelEntry, ModelSet
 
 @dataclass(slots=True)
 class ModelClientRegistry:
@@ -23,7 +23,7 @@ class ModelClientRegistry:
         if self.openai is None:
             self.openai = OpenAIChatClient()
 
-    def get_client_for_model(self, model: dict[str, Any]) -> ChatModelClient:
+    def get_client_for_model(self, model: ModelEntry) -> ChatModelClient:
         """根据单个模型配置决定使用哪个 provider。
 
         当前阶段以 `client_type` 为准：openai/gemini/bedrock。

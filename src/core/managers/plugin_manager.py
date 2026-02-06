@@ -21,12 +21,11 @@ from src.core.components.loader import (
     PluginManifest,
     get_plugin_class,
 )
-from src.core.components.registry import get_global_registry
-from src.core.components.state_manager import get_global_state_manager
+from src.core.components import get_global_registry, get_global_state_manager
 from src.core.components.types import ComponentState, ComponentType, build_signature
 
 if TYPE_CHECKING:
-    from src.core.components.base.plugin import BasePlugin
+    from src.core.components import BasePlugin
 
 
 logger = get_logger("plugin_manager")
@@ -59,7 +58,9 @@ class PluginManager:
 
         logger.info("插件管理器初始化完成")
 
-    async def load_plugin_from_manifest(self, plugin_path: str, manifest: PluginManifest) -> bool:
+    async def load_plugin_from_manifest(
+        self, plugin_path: str, manifest: PluginManifest
+    ) -> bool:
         """加载单个插件（manifest 已由 loader 宏观层校验并提供）。"""
         plugin_name = manifest.name
 
@@ -102,7 +103,9 @@ class PluginManager:
 
         has_config = False
         for component_cls in plugin_instance.get_components():
-            if isinstance(component_cls, type) and issubclass(component_cls, BaseConfig):
+            if isinstance(component_cls, type) and issubclass(
+                component_cls, BaseConfig
+            ):
                 has_config = True
                 config = get_config_manager().load_config(plugin_name, component_cls)
                 plugin_instance.config = config
@@ -118,14 +121,18 @@ class PluginManager:
         try:
             await plugin_instance.on_plugin_loaded()
         except Exception as e:
-            logger.error(f"调用插件 '{plugin_name}' 的 on_plugin_loaded 钩子时出错: {e}")
+            logger.error(
+                f"调用插件 '{plugin_name}' 的 on_plugin_loaded 钩子时出错: {e}"
+            )
 
         # 6.1 门控 Collection 内部组件：未解包前默认不可用
         try:
             from src.core.managers.collection_manager import get_collection_manager
 
             registry = get_global_registry()
-            collections = registry.get_by_plugin_and_type(plugin_name, ComponentType.COLLECTION)
+            collections = registry.get_by_plugin_and_type(
+                plugin_name, ComponentType.COLLECTION
+            )
             if collections:
                 collection_manager = get_collection_manager()
                 for collection_sig in collections.keys():
@@ -190,13 +197,15 @@ class PluginManager:
             try:
                 await plugin.on_plugin_unloaded()
             except Exception as e:
-                logger.error(f"调用插件 '{plugin_name}' 的 on_plugin_unloaded 钩子时出错: {e}")
+                logger.error(
+                    f"调用插件 '{plugin_name}' 的 on_plugin_unloaded 钩子时出错: {e}"
+                )
 
             # 更新状态
             state_manager = get_global_state_manager()
             await state_manager.set_state_async(
                 build_signature(plugin_name, ComponentType.PLUGIN, plugin_name),
-                ComponentState.UNLOADED
+                ComponentState.UNLOADED,
             )
 
             # 从全局注册表中移除该插件的组件
@@ -347,7 +356,9 @@ class PluginManager:
 
     # manifest 读取 / 版本校验 / 依赖解析：已迁移至 loader.PluginLoader
 
-    async def _load_from_archive(self, archive_path: str, manifest: PluginManifest) -> Any | None:
+    async def _load_from_archive(
+        self, archive_path: str, manifest: PluginManifest
+    ) -> Any | None:
         """从 ZIP/MFP 加载插件模块。
 
         支持两种打包格式：
@@ -367,7 +378,7 @@ class PluginManager:
             # 创建持久化临时目录（不使用 with 块，避免提前删除）
             tmpdir = tempfile.mkdtemp(prefix=f"mofox_plugin_{manifest.name}_")
 
-            with zipfile.ZipFile(archive_path, 'r') as zf:
+            with zipfile.ZipFile(archive_path, "r") as zf:
                 zf.extractall(tmpdir)
 
                 # 确定插件根目录：可能是 tmpdir 本身或其中的子目录
@@ -413,8 +424,8 @@ class PluginManager:
                 module = importlib.util.module_from_spec(spec)
 
                 # 设置 __package__ 以支持相对导入
-                if '.' in module_name:
-                    module.__package__ = module_name.rsplit('.', 1)[0]
+                if "." in module_name:
+                    module.__package__ = module_name.rsplit(".", 1)[0]
                 else:
                     module.__package__ = package_name
 
@@ -435,7 +446,9 @@ class PluginManager:
             logger.error(f"从压缩包加载插件模块失败 ({archive_path}): {e}")
             return None
 
-    async def _load_from_folder(self, folder_path: str, manifest: PluginManifest) -> Any | None:
+    async def _load_from_folder(
+        self, folder_path: str, manifest: PluginManifest
+    ) -> Any | None:
         """从文件夹加载插件模块。
 
         Args:
@@ -447,7 +460,7 @@ class PluginManager:
         """
         try:
             folder = Path(folder_path)
-            
+
             # 添加插件目录的父目录到 sys.path
             parent_dir = str(folder.parent)
             sys.path.insert(0, parent_dir)
@@ -460,13 +473,19 @@ class PluginManager:
 
                 # 构建包名（使用插件文件夹名作为包名）
                 package_name = folder.name
-                
+
                 # 计算入口点相对于插件文件夹的模块路径
                 try:
                     entry_relative = entry_point.relative_to(folder)
                     # 将路径转换为模块名 (例如: plugin.py -> plugin, src/main.py -> src.main)
-                    module_parts = list(entry_relative.parts[:-1]) + [entry_relative.stem]
-                    module_name = f"{package_name}.{'.'.join(module_parts)}" if module_parts[0] != entry_relative.stem else package_name + "." + entry_relative.stem
+                    module_parts = list(entry_relative.parts[:-1]) + [
+                        entry_relative.stem
+                    ]
+                    module_name = (
+                        f"{package_name}.{'.'.join(module_parts)}"
+                        if module_parts[0] != entry_relative.stem
+                        else package_name + "." + entry_relative.stem
+                    )
                 except ValueError:
                     logger.error(f"入口点不在插件文件夹内: {entry_point}")
                     return None
@@ -475,20 +494,20 @@ class PluginManager:
                 spec = importlib.util.spec_from_file_location(
                     module_name,
                     str(entry_point),
-                    submodule_search_locations=[str(folder)]
+                    submodule_search_locations=[str(folder)],
                 )
                 if spec is None or spec.loader is None:
                     logger.error(f"无法创建模块规范: {entry_point}")
                     return None
 
                 module = importlib.util.module_from_spec(spec)
-                
+
                 # 设置 __package__ 以支持相对导入
-                if '.' in module_name:
-                    module.__package__ = module_name.rsplit('.', 1)[0]
+                if "." in module_name:
+                    module.__package__ = module_name.rsplit(".", 1)[0]
                 else:
                     module.__package__ = package_name
-                
+
                 sys.modules[module_name] = module
                 spec.loader.exec_module(module)
 
@@ -522,7 +541,9 @@ class PluginManager:
 
         for component_cls in components:
             # 推断组件类型和名称
-            component_type, component_name, dependencies = self._identify_component(component_cls)
+            component_type, component_name, dependencies = self._identify_component(
+                component_cls
+            )
 
             if not component_type or not component_name:
                 logger.warning(
@@ -574,7 +595,7 @@ class PluginManager:
         """
         # 动态导入基类以避免循环导入
         from src.core.components.base.action import BaseAction
-        from src.core.components.base.adapter import BaseAdapter
+        from src.core.components import BaseAdapter
         from src.core.components.base.chatter import BaseChatter
         from src.core.components.base.collection import BaseCollection
         from src.core.components.base.command import BaseCommand
@@ -604,7 +625,9 @@ class PluginManager:
         # 检查组件类型
         for comp_type, (base_cls, name_attr) in type_mapping.items():
             try:
-                if inspect.isclass(component_cls) and issubclass(component_cls, base_cls):
+                if inspect.isclass(component_cls) and issubclass(
+                    component_cls, base_cls
+                ):
                     component_name = getattr(component_cls, name_attr, None)
                     dependencies = getattr(component_cls, "dependencies", [])
                     return comp_type, component_name, dependencies

@@ -16,6 +16,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from packaging.version import InvalidVersion, Version
+
+from src.core.config import CORE_VERSION
 from src.kernel.logger import get_logger
 
 logger = get_logger("plugin_loader")
@@ -62,8 +65,8 @@ def _get_zip_root_prefix(zf: zipfile.ZipFile) -> str:
     return ""
 
 if TYPE_CHECKING:
-    from src.core.components.base.plugin import BasePlugin
-    from src.core.managers.plugin_manager import PluginManager
+    from src.core.components import BasePlugin
+    from src.core.managers import PluginManager
 
 # 全局插件注册表
 _plugin_registry: dict[str, type["BasePlugin"]] = {}
@@ -362,9 +365,35 @@ class PluginLoader:
     def _check_version_compatibility(self, manifest: PluginManifest) -> bool:
         """检查核心版本兼容性（宏观层面）。
 
-        TODO: 实现语义化版本比较。
+        使用语义化版本比较，判断当前核心版本是否满足插件要求的最低版本。
+
+        Args:
+            manifest: 插件清单对象
+
+        Returns:
+            bool: 如果当前核心版本 >= 插件要求的最低版本，返回 True；否则返回 False
         """
-        return True
+        try:
+            current_version = Version(CORE_VERSION)
+            required_version = Version(manifest.min_core_version)
+            is_compatible = current_version >= required_version
+
+            if not is_compatible:
+                logger.warning(
+                    f"插件 '{manifest.name}' 版本不兼容："
+                    f"需要核心版本 >= {manifest.min_core_version}，"
+                    f"当前核心版本为 {CORE_VERSION}"
+                )
+
+            return is_compatible
+        except InvalidVersion as e:
+            logger.error(
+                f"插件 '{manifest.name}' 版本号格式无效："
+                f"min_core_version='{manifest.min_core_version}'，"
+                f"CORE_VERSION='{CORE_VERSION}' - {e}"
+            )
+            # 版本格式无效时，保守策略：拒绝加载
+            return False
 
     def _parse_plugin_ref(self, ref: str) -> str:
         return ref.split(":")[0]
@@ -447,7 +476,7 @@ class PluginLoader:
         plugin_manager: "PluginManager | None" = None,
     ) -> dict[str, bool]:
         """按计划加载插件，并委托 PluginManager 执行单插件加载。"""
-        from src.core.managers.plugin_manager import get_plugin_manager
+        from src.core.managers import get_plugin_manager
 
         manager = plugin_manager or get_plugin_manager()
         load_order, manifests_to_load = await self.plan_plugins(plugins_dir)
@@ -466,11 +495,6 @@ class PluginLoader:
                 manifest,
             )
             results[plugin_name] = success
-
-        from src.kernel.event import get_event_bus
-        from src.core.components.types import EventType
-
-        await get_event_bus().publish(EventType.ON_ALL_PLUGIN_LOADED, {})
 
         return results
 

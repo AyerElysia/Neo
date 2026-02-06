@@ -14,12 +14,12 @@ import asyncio
 import time
 from typing import TYPE_CHECKING, Any
 
-from src.kernel.logger import get_logger
+from src.kernel.logger import get_logger, COLOR
 
 if TYPE_CHECKING:
     from src.core.models.stream import ChatStream, StreamContext
 
-logger = get_logger("stream_loop_manager", display="StreamLoop")
+logger = get_logger("stream_loop_manager", display="流循环", color=COLOR.MAGENTA)
 
 # ============================================================================
 # 默认配置常量
@@ -27,11 +27,7 @@ logger = get_logger("stream_loop_manager", display="StreamLoop")
 
 _DEFAULT_MAX_CONCURRENT_STREAMS = 10
 _DEFAULT_FORCE_DISPATCH_THRESHOLD = 20
-_DEFAULT_PRIVATE_INTERVAL_ACTIVE = 0.5
-_DEFAULT_PRIVATE_INTERVAL_IDLE = 5.0
-_DEFAULT_GROUP_INTERVAL_BASE = 5.0
-_DEFAULT_THINKING_TIMEOUT = 120.0
-
+_DEFAULT_INTERVAL_BASE = 5.0
 
 class StreamLoopManager:
     """流循环管理器 — 基于 Generator + Tick 的事件驱动模式。
@@ -79,8 +75,6 @@ class StreamLoopManager:
             "start_time": time.time(),
         }
 
-        logger.info(f"StreamLoopManager 初始化完成 (最大并发: {max_concurrent_streams})")
-
     # ========================================================================
     # 生命周期管理
     # ========================================================================
@@ -100,7 +94,7 @@ class StreamLoopManager:
 
         self.is_running = False
 
-        from src.core.managers.stream_manager import get_stream_manager
+        from src.core.managers import get_stream_manager
 
         sm = get_stream_manager()
         cancel_tasks: list[tuple[str, asyncio.Task]] = []  # type: ignore[type-arg]
@@ -227,7 +221,7 @@ class StreamLoopManager:
         Returns:
             StreamContext | None: 流上下文，不存在时返回 None
         """
-        from src.core.managers.stream_manager import get_stream_manager
+        from src.core.managers import get_stream_manager
 
         sm = get_stream_manager()
         chat_stream: "ChatStream | None" = sm._streams.get(stream_id)
@@ -281,7 +275,7 @@ class StreamLoopManager:
         Returns:
             bool: 是否处理成功
         """
-        from src.core.managers.chatter_manager import get_chatter_manager
+        from src.core.managers import get_chatter_manager
 
         chatter_manager = get_chatter_manager()
 
@@ -307,7 +301,7 @@ class StreamLoopManager:
             # 获取此流的 Chatter
             chatter = chatter_manager.get_chatter_by_stream(stream_id)
             if not chatter:
-                from src.core.managers.stream_manager import get_stream_manager
+                from src.core.managers import get_stream_manager
 
                 sm = get_stream_manager()
                 chat_stream = sm._streams.get(stream_id)
@@ -325,16 +319,11 @@ class StreamLoopManager:
                     return False
 
             # 执行 Chatter
-            async with self._processing_semaphore:
-                result_gen = chatter.execute(list(unread_messages))
-                # 消费生成器结果
-                if result_gen is not None:
-                    async for result in result_gen:
-                        logger.debug(f"Chatter 结果: {result}")
-
-            # 清空未读消息
-            context.unread_messages.clear()
-
+            result_gen = await chatter.execute(list(unread_messages))
+            # 消费生成器结果
+            if result_gen is not None:
+                async for result in result_gen:
+                    logger.debug(f"Chatter 结果: {result}")
             return True
 
         except asyncio.CancelledError:
@@ -350,36 +339,20 @@ class StreamLoopManager:
     # ========================================================================
 
     async def _calculate_interval(self, stream_id: str, has_messages: bool) -> float:
-        """计算下次检查间隔。
-
-        私聊：有消息 0.5s，无消息 5.0s。
-        群聊：有消息使用基础间隔，无消息使用 2 倍基础间隔。
-
-        Args:
-            stream_id: 流 ID
-            has_messages: 当前是否有未读消息
-
-        Returns:
-            float: 等待秒数
         """
-        from src.core.managers.stream_manager import get_stream_manager
+        计算下次 Tick 的等待间隔。5-15秒随机波动。
+        """
+        base = _DEFAULT_INTERVAL_BASE
 
-        sm = get_stream_manager()
-        chat_stream = sm._streams.get(stream_id)
-
-        if chat_stream and chat_stream.chat_type == "private":
-            return _DEFAULT_PRIVATE_INTERVAL_ACTIVE if has_messages else _DEFAULT_PRIVATE_INTERVAL_IDLE
-
-        base_interval = _DEFAULT_GROUP_INTERVAL_BASE
-        if not has_messages:
-            return base_interval * 2.0
-
-        return base_interval
+        # 简单的随机波动
+        jitter = base * 0.3
+        interval = base + (jitter * (0.5 - time.time() % 1))
+        return max(0.5, interval)
 
     def _needs_force_dispatch(self, context: "StreamContext", unread_count: int) -> bool:
         """检查是否需要强制分发。
 
-        当未读消息数超过阈值时触发强制分发。
+        当未读消息数超过阈值时触发强制分发.
 
         Args:
             context: 流上下文
@@ -391,31 +364,6 @@ class StreamLoopManager:
         if self.force_dispatch_unread_threshold <= 0:
             return False
         return unread_count > self.force_dispatch_unread_threshold
-
-    def _recover_stale_processing_state(
-        self,
-        stream_id: str,
-        context: "StreamContext",
-    ) -> bool:
-        """检测并修复 Chatter 处理标志的假死状态。
-
-        Args:
-            stream_id: 流 ID
-            context: 流上下文
-
-        Returns:
-            bool: 是否进行了修复
-        """
-        # 如果没有关联的任务但标志为 True，说明是残留状态
-        if context.stream_loop_task is None or context.stream_loop_task.done():
-            # 当前驱动器自身刚刚拿到了 context，所以 task 可能未完成
-            # 这里仅检查标志状态是否合理
-            pass
-
-        # 简单策略：如果标志为 True 但无其他证据，尝试清除
-        context.is_chatter_processing = False
-        logger.warning(f"[自愈] stream={stream_id[:8]}, 清除残留处理标志")
-        return True
 
     # ========================================================================
     # 辅助方法

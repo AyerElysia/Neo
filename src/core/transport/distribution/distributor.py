@@ -14,21 +14,21 @@
 
 from __future__ import annotations
 
-from src.core.components.types import EventType
+from src.core.components import EventType
 from src.kernel.event import EventDecision, get_event_bus
-from src.kernel.logger import get_logger
+from src.kernel.logger import get_logger, COLOR
 
-logger = get_logger("distributor", display="Distributor")
+logger = get_logger("distributor", display="消息分发", color=COLOR.MAGENTA)
 
 
-async def _on_message_received(event_name: str, params: dict) -> tuple[EventDecision, dict]:
+async def _on_message_received(_: str, params: dict) -> tuple[EventDecision, dict]:
     """处理 ON_MESSAGE_RECEIVED 事件的回调。
 
     从事件参数中提取 Message，获取或创建 ChatStream，
     将消息添加到流的未读列表，并尝试启动该流的 Tick 驱动器。
 
     Args:
-        event_name: 事件名称
+        _: 事件名称（未使用）
         params: 事件参数，包含 ``message``、``envelope``、``adapter_signature``
 
     Returns:
@@ -66,12 +66,6 @@ async def _on_message_received(event_name: str, params: dict) -> tuple[EventDeci
         # 3. 将消息添加到未读列表
         context.add_unread_message(message)
 
-        logger.debug(
-            f"消息已分发到流: stream={stream_id[:8]}, "
-            f"sender={message.sender_name}, "
-            f"unread={len(context.unread_messages)}"
-        )
-
         # 4. 尝试启动该流的 Tick 驱动器（如果已在运行则跳过）
         slm = get_stream_loop_manager()
         if slm.is_running:
@@ -79,7 +73,7 @@ async def _on_message_received(event_name: str, params: dict) -> tuple[EventDeci
             if not (context.stream_loop_task and not context.stream_loop_task.done()):
                 await slm.start_stream_loop(stream_id)
         else:
-            logger.debug("StreamLoopManager 未启动，跳过驱动器启动")
+            logger.warning("StreamLoopManager 未启动，跳过驱动器启动")
 
     except Exception as e:
         logger.error(f"消息分发失败: {e}", exc_info=True)
@@ -87,11 +81,11 @@ async def _on_message_received(event_name: str, params: dict) -> tuple[EventDeci
     return EventDecision.SUCCESS, params
 
 
-async def _on_all_plugins_loaded(event_name: str, params: dict) -> tuple[EventDecision, dict]:
+async def _on_all_plugins_loaded(_: str, params: dict) -> tuple[EventDecision, dict]:
     """所有插件加载完毕后，启动 StreamLoopManager。
 
     Args:
-        event_name: 事件名称
+        _: 事件名称（未使用）
         params: 事件参数
 
     Returns:
@@ -139,4 +133,4 @@ def initialize_distribution() -> None:
     # 确保 StreamLoopManager 实例已创建
     get_stream_loop_manager()
 
-    logger.info("消息分发模块初始化完成（已订阅 ON_MESSAGE_RECEIVED + ON_ALL_PLUGIN_LOADED）")
+    logger.info("消息分发模块初始化完成")

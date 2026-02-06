@@ -17,7 +17,7 @@ import pytest
 
 from src.core.components.base.action import BaseAction
 from src.core.components.base.collection import BaseCollection
-from src.core.components.base.plugin import BasePlugin
+from src.core.components import BasePlugin
 from src.core.components.base.tool import BaseTool
 from src.core.components.base.chatter import BaseChatter, ChatterResult
 from src.core.components.registry import ComponentRegistry

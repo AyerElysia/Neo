@@ -3,6 +3,7 @@
 本模块提供 Collection 管理器，负责 Collection 组件的注册、发现和解包。
 Collection 是 LLMUsable 的集合体，可包含多个 Action、Tool 或嵌套的 Collection。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -10,18 +11,22 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
 from src.kernel.logger import get_logger
-from src.kernel.llm.payload.tooling import LLMUsable
+from src.kernel.llm import LLMUsable
+from src.kernel.concurrency import get_task_manager
 
-from src.core.components.registry import get_global_registry
 from src.core.components.types import ComponentType, ComponentSignature, parse_signature
 
 # 将常用组件基类导入移至顶层，避免在热路径中重复导入
-from src.core.components.base.action import BaseAction
-from src.core.components.base.tool import BaseTool
-from src.core.components.base.collection import BaseCollection
+from src.core.components import (
+    get_global_registry,
+    BaseAction,
+    BaseTool,
+    BaseCollection,
+)
+
 
 if TYPE_CHECKING:
-    from src.core.components.base.plugin import BasePlugin
+    from src.core.components import BasePlugin
 
 logger = get_logger("collection_manager")
 
@@ -112,7 +117,9 @@ class CollectionManager:
         registry = get_global_registry()
         return registry.get_by_type(ComponentType.COLLECTION)
 
-    def get_collections_for_plugin(self, plugin_name: str) -> dict[str, type["BaseCollection"]]:
+    def get_collections_for_plugin(
+        self, plugin_name: str
+    ) -> dict[str, type["BaseCollection"]]:
         """获取指定插件的所有 Collection 组件。"""
         registry = get_global_registry()
         return registry.get_by_plugin_and_type(plugin_name, ComponentType.COLLECTION)
@@ -149,7 +156,8 @@ class CollectionManager:
         # 使用缓存的签名解析
         sig_info = _cached_parse_signature(signature)
         if plugin is None:
-            from src.core.managers.plugin_manager import get_plugin_manager
+            from src.core.managers import get_plugin_manager
+
             plugin_manager = get_plugin_manager()
             plugin = plugin_manager.get_plugin(sig_info["plugin_name"])
 
@@ -208,7 +216,9 @@ class CollectionManager:
                 continue
 
             try:
-                if not (issubclass(item_cls, BaseAction) or issubclass(item_cls, BaseTool)):
+                if not (
+                    issubclass(item_cls, BaseAction) or issubclass(item_cls, BaseTool)
+                ):
                     continue
             except TypeError:
                 continue
@@ -226,7 +236,7 @@ class CollectionManager:
         signature: str,
         stream_id: str,
         recursive: bool = False,
-        plugin: BasePlugin | None = None, 
+        plugin: BasePlugin | None = None,
     ) -> list[type[LLMUsable]]:
         """解包 Collection，获取所有包含的 LLMUsable 组件类。
 
@@ -316,7 +326,7 @@ class CollectionManager:
             self.unpack_collection(sig, recursive=True, stream_id=stream_id)
             for sig in signatures
         ]
-        all_components_lists = await asyncio.gather(*tasks)
+        all_components_lists = await get_task_manager().gather(*tasks)
 
         seen: set[str] = set()
         result: list[type[LLMUsable]] = []

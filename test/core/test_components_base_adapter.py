@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch, MagicMock as Mg
 
 import pytest
 
-from src.core.components.base.adapter import BaseAdapter
-from src.core.components.base.plugin import BasePlugin
+from src.core.components import BaseAdapter
+from src.core.components import BasePlugin
 
 
 class TestAdapter(BaseAdapter):
@@ -96,7 +96,7 @@ class TestBaseAdapter:
         adapter = TestAdapter(core_sink=mock_sink)
 
         # Mock 父类 start 和 get_task_manager
-        with patch("src.core.components.base.adapter.get_task_manager") as mock_tm:
+        with patch("src.core.components.get_task_manager") as mock_tm:
             mock_task_info = MagicMock()
             mock_task_info.task_id = "test_task_id"
             mock_tm_instance = MagicMock()
@@ -119,7 +119,7 @@ class TestBaseAdapter:
         adapter._health_check_task_info = MagicMock()
 
         # Mock get_task_manager
-        with patch("src.core.components.base.adapter.get_task_manager") as mock_tm:
+        with patch("src.core.components.get_task_manager") as mock_tm:
             mock_tm_instance = MagicMock()
             mock_tm.return_value = mock_tm_instance
 

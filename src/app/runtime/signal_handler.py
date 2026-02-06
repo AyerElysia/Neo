@@ -82,6 +82,7 @@ class SignalHandler:
             self.last_signal_time = current_time
 
             # 第一次信号：请求优雅关闭
+            assert self.bot.logger is not None
             if self.signal_count == 1:
                 self.bot.logger.info(
                     "Shutdown signal received. Press Ctrl+C again to force quit..."

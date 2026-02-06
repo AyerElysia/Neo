@@ -28,6 +28,7 @@ from .core_config import (
     CoreConfig,
     get_core_config,
     init_core_config,
+    CORE_VERSION
 )
 from .mcp_config import (
     MCPConfig,
@@ -46,6 +47,7 @@ from .model_config import (
 
 __all__ = [
     # Core 配置
+    "CORE_VERSION",
     "CoreConfig",
     "get_core_config",
     "init_core_config",

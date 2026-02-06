@@ -468,11 +468,11 @@ def get_model_config() -> ModelConfig:
     return _global_model_config
 
 
-def init_model_config(config_path: str | None = None) -> ModelConfig:
+def init_model_config(config_path: str) -> ModelConfig:
     """初始化模型配置
     
     Args:
-        config_path: 配置文件路径，为 None 时使用默认配置
+        config_path: 配置文件路径
         
     Returns:
         ModelConfig: 模型配置实例
@@ -490,12 +490,26 @@ def init_model_config(config_path: str | None = None) -> ModelConfig:
     """
     global _global_model_config
 
-    if config_path is None:
-        # 使用默认配置
-        _global_model_config = ModelConfig()
-    else:
-        # 从文件加载配置
-        _global_model_config = ModelConfig.load(config_path, auto_update=True)
+    from pathlib import Path
+
+    path = Path(config_path)
+
+    # 确保配置文件存在
+    if not path.exists():
+        # 确保父目录存在
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 创建默认配置文件
+        default_config = ModelConfig.default()
+        _global_model_config = ModelConfig.model_validate(default_config)
+
+        # 保存默认配置到文件
+        from src.kernel.config.core import _render_toml_with_signature
+        toml_content = _render_toml_with_signature(ModelConfig, default_config)
+        path.write_text(toml_content, encoding="utf-8")
+
+    # 从文件加载配置
+    _global_model_config = ModelConfig.load(config_path)
 
     return _global_model_config
 

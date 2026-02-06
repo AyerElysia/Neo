@@ -9,12 +9,11 @@ from typing import TYPE_CHECKING
 
 from src.kernel.logger import get_logger
 
-from src.core.components.registry import get_global_registry
-from src.core.components.types import ComponentType
+from src.core.components import ComponentType, get_global_registry
 
 if TYPE_CHECKING:
-    from src.core.components.base.command import BaseCommand
-    from src.core.models.message import Message
+    from src.core.components import BaseCommand
+    from src.core.models import Message
 
 
 logger = get_logger("command_manager")
@@ -64,7 +63,9 @@ class CommandManager:
         registry = get_global_registry()
         return registry.get_by_type(ComponentType.COMMAND)
 
-    def get_commands_for_plugin(self, plugin_name: str) -> dict[str, type["BaseCommand"]]:
+    def get_commands_for_plugin(
+        self, plugin_name: str
+    ) -> dict[str, type["BaseCommand"]]:
         """获取指定插件的所有 Command 组件。
 
         Args:
@@ -115,7 +116,9 @@ class CommandManager:
         stripped = text.strip()
         return any(stripped.startswith(prefix) for prefix in self._command_prefixes)
 
-    def match_command(self, text: str) -> tuple[str, type["BaseCommand"] | None, list[str]]:
+    def match_command(
+        self, text: str
+    ) -> tuple[str, type["BaseCommand"] | None, list[str]]:
         """匹配命令。
 
         解析文本并查找匹配的 Command 组件。
@@ -138,7 +141,7 @@ class CommandManager:
         # 移除命令前缀
         for prefix in self._command_prefixes:
             if stripped.startswith(prefix):
-                stripped = stripped[len(prefix):].strip()
+                stripped = stripped[len(prefix) :].strip()
                 break
 
         # 分割命令路径和参数
@@ -198,9 +201,7 @@ class CommandManager:
         from src.core.managers.permission_manager import get_permission_manager
 
         perm_manager = get_permission_manager()
-        person_id = perm_manager.generate_person_id(
-            message.platform, message.sender_id
-        )
+        person_id = perm_manager.generate_person_id(message.platform, message.sender_id)
 
         # 检查用户是否有权限执行该命令
         has_permission, perm_reason = await perm_manager.check_command_permission(
@@ -216,7 +217,7 @@ class CommandManager:
             return False, f"权限不足：{perm_reason}"
 
         # ========== 命令执行 ==========
-        from src.core.managers.plugin_manager import get_plugin_manager
+        from src.core.managers import get_plugin_manager
         from src.core.components.types import parse_signature
 
         sig_info = parse_signature(signature)
@@ -253,7 +254,7 @@ class CommandManager:
             return f"命令未找到: {signature}"
 
         # 获取 plugin 实例以创建临时 Command 实例
-        from src.core.managers.plugin_manager import get_plugin_manager
+        from src.core.managers import get_plugin_manager
         from src.core.components.types import parse_signature
 
         sig_info = parse_signature(signature)
@@ -277,7 +278,9 @@ class CommandManager:
             help_lines.append("\n子命令:")
             for child_name, child_node in command_instance._root.children.items():
                 desc = child_node.description or "无描述"
-                help_lines.append(f"  /{command_cls.command_name} {child_name} - {desc}")
+                help_lines.append(
+                    f"  /{command_cls.command_name} {child_name} - {desc}"
+                )
 
         return "\n".join(help_lines)
 
@@ -315,10 +318,7 @@ class CommandManager:
             >>> ["/help", "/set", "/status"]
         """
         all_commands = self.get_all_commands()
-        return [
-            f"/{cmd_cls.command_name}"
-            for cmd_cls in all_commands.values()
-        ]
+        return [f"/{cmd_cls.command_name}" for cmd_cls in all_commands.values()]
 
 
 # 全局 Command 管理器实例

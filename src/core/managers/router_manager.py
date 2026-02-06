@@ -12,13 +12,12 @@ if TYPE_CHECKING:
 
 from src.kernel.logger import get_logger
 
-from src.core.components.registry import get_global_registry
-from src.core.components.types import ComponentType
-from src.core.transport.router.http_server import get_http_server
+from src.core.components import get_global_registry, ComponentType
+
+from src.core.transport import get_http_server
 
 if TYPE_CHECKING:
-    from src.core.components.base.router import BaseRouter
-    from src.core.components.base.plugin import BasePlugin
+    from src.core.components import BaseRouter, BasePlugin
 
 
 logger = get_logger("router_manager")
@@ -200,28 +199,30 @@ class RouterManager:
         try:
             http_server = get_http_server()
             route_path = router_instance.get_route_path()
-            
+
             # 查找并移除对应的 Mount 路由
             from starlette.routing import Mount
-            
+
             # 标准化路径（移除尾部斜杠以精确匹配）
             normalized_path = route_path.rstrip("/")
-            
+
             routes_to_remove = [
-                route for route in http_server.app.routes
-                if isinstance(route, Mount) and route.path.rstrip("/") == normalized_path
+                route
+                for route in http_server.app.routes
+                if isinstance(route, Mount)
+                and route.path.rstrip("/") == normalized_path
             ]
-            
+
             if not routes_to_remove:
                 logger.warning(f"未找到匹配的 Mount 路由: {route_path}")
-            
+
             for route in routes_to_remove:
                 http_server.app.routes.remove(route)
                 logger.debug(f"已从HTTP服务器移除路由: {route.path}")
-                
+
             # 清理路由器（触发重新构建路由表）
             # 注意：Starlette/FastAPI 会在下次请求时自动重建路由表，无需手动触发
-            
+
         except Exception as e:
             logger.error(f"从HTTP服务器卸载路由失败 ({signature}): {e}")
 
@@ -243,21 +244,25 @@ class RouterManager:
             >>> routers = await manager.mount_plugin_routers(plugin)
         """
         from src.core.components.types import build_signature
-        
+
         plugin_name = plugin.plugin_name
         routers = self.get_routers_for_plugin(plugin_name)
 
         mounted_routers = []
         for component_name, router_cls in routers.items():
             # 构建完整签名
-            signature = build_signature(plugin_name, ComponentType.ROUTER, component_name)
+            signature = build_signature(
+                plugin_name, ComponentType.ROUTER, component_name
+            )
             try:
                 router = await self.mount_router(signature, plugin)
                 mounted_routers.append(router)
             except Exception as e:
                 logger.error(f"挂载 Router 失败 ({signature}): {e}")
 
-        logger.info(f"插件 {plugin_name} 的 Router 挂载完成: {len(mounted_routers)}/{len(routers)}")
+        logger.info(
+            f"插件 {plugin_name} 的 Router 挂载完成: {len(mounted_routers)}/{len(routers)}"
+        )
         return mounted_routers
 
     async def unmount_plugin_routers(self, plugin_name: str) -> None:
@@ -270,12 +275,14 @@ class RouterManager:
             >>> await manager.unmount_plugin_routers("my_plugin")
         """
         from src.core.components.types import build_signature
-        
+
         routers = self.get_routers_for_plugin(plugin_name)
 
         for component_name in routers.keys():
             # 构建完整签名
-            signature = build_signature(plugin_name, ComponentType.ROUTER, component_name)
+            signature = build_signature(
+                plugin_name, ComponentType.ROUTER, component_name
+            )
             try:
                 await self.unmount_router(signature)
             except Exception as e:
@@ -291,7 +298,7 @@ class RouterManager:
         Examples:
             >>> await manager.mount_all_routers()
         """
-        from src.core.managers.plugin_manager import get_plugin_manager
+        from src.core.managers import get_plugin_manager
 
         plugin_manager = get_plugin_manager()
         plugins = plugin_manager.get_all_plugins()

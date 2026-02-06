@@ -8,7 +8,7 @@ Service 暴露特定功能供其他插件或组件调用。
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.core.components.base.plugin import BasePlugin
+    from src.core.components import BasePlugin
 
 
 class BaseService:
@@ -81,8 +81,8 @@ class BaseService:
             >>> signature = MyMemoryService.get_signature()
             >>> "my_plugin:service:my_memory"
         """
-        if hasattr(cls, "_signature_") and cls._signature_:  # type: ignore
-            return cls._signature_  # type: ignore
-        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.service_name:  # type: ignore
-            return f"{cls._plugin_}:service:{cls.service_name}"  # type: ignore
+        if hasattr(cls, "_signature_") and cls._signature_:
+            return cls._signature_
+        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.service_name:
+            return f"{cls._plugin_}:service:{cls.service_name}"
         return None

@@ -43,7 +43,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 if TYPE_CHECKING:
-    from src.core.components.loader import PluginManifest
+    from src.core.components import PluginManifest
 
 
 class UILevel(Enum):

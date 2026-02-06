@@ -64,7 +64,7 @@ def get_mcp_config() -> MCPConfig:
     return _global_mcp_config
 
 
-def init_mcp_config(config_path: str | None = None) -> MCPConfig:
+def init_mcp_config(config_path: str) -> MCPConfig:
     """初始化 MCP 配置
 
     Args:
@@ -75,11 +75,25 @@ def init_mcp_config(config_path: str | None = None) -> MCPConfig:
     """
     global _global_mcp_config
 
-    if config_path is None:
-        # 使用默认配置
-        _global_mcp_config = MCPConfig()
-    else:
-        # 从文件加载配置
-        _global_mcp_config = MCPConfig.load(config_path)
+    from pathlib import Path
+
+    path = Path(config_path)
+
+    # 确保配置文件存在
+    if not path.exists():
+        # 确保父目录存在
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 创建默认配置文件
+        default_config = MCPConfig.default()
+        _global_mcp_config = MCPConfig.model_validate(default_config)
+
+        # 保存默认配置到文件
+        from src.kernel.config.core import _render_toml_with_signature
+        toml_content = _render_toml_with_signature(MCPConfig, default_config)
+        path.write_text(toml_content, encoding="utf-8")
+
+    # 从文件加载配置
+    _global_mcp_config = MCPConfig.load(config_path)
 
     return _global_mcp_config

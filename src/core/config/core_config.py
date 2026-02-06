@@ -5,16 +5,14 @@
 
 from src.kernel.config import ConfigBase, SectionBase, config_section, Field
 
-
-
-
+CORE_VERSION = "1.0.0"
 
 class CoreConfig(ConfigBase):
     """Core 层配置类
 
     定义 Core 层的所有配置节。Core 层包含对话管理、用户管理、消息处理等业务逻辑。
     """
-
+    
     @config_section("bot")
     class BotSection(SectionBase):
         """Bot 配置节
@@ -47,7 +45,7 @@ class CoreConfig(ConfigBase):
             description="数据目录",
         )
         shutdown_timeout: float = Field(
-            default=30.0,
+            default=15.0,
             description="优雅关闭超时时间（秒）",
         )
         force_shutdown_after: float = Field(
@@ -267,18 +265,27 @@ class CoreConfig(ConfigBase):
             description="是否记录权限允许日志（调试用）",
         )
 
-        # ========== 群组权限配置 ==========
-        enable_group_permissions: bool = Field(
-            default=False,
-            description="是否启用群组级权限（未来扩展）",
-        )
-        group_admin_permission_level: str = Field(
-            default="operator",
-            description="群组管理员的默认权限级别",
-        )
-
     permissions: PermissionSection = Field(default_factory=PermissionSection)
 
+    class HttpRouterSection(SectionBase):
+        """HTTP 路由配置节
+
+        定义 HTTP API 相关的配置参数。
+        """
+
+        enable_http_router: bool = Field(
+            default=True,
+            description="是否启用 HTTP 路由",
+        )
+        http_router_host: str = Field(
+            default="127.0.0.1",
+            description="HTTP 路由监听地址",
+        )
+        http_router_port: int = Field(
+            default=8000,
+            description="HTTP 路由监听端口",
+        )
+    http_router: HttpRouterSection = Field(default_factory=HttpRouterSection)
 
 # 全局配置实例（延迟初始化）
 _global_config: CoreConfig | None = None
@@ -306,7 +313,7 @@ def init_core_config(config_path: str) -> CoreConfig:
     """初始化 Core 配置
 
     Args:
-        config_path: 配置文件路径，为 None 时使用默认配置
+        config_path: 配置文件路径
 
     Returns:
         CoreConfig: 配置实例
@@ -341,15 +348,8 @@ def init_core_config(config_path: str) -> CoreConfig:
         from src.kernel.config.core import _render_toml_with_signature
         toml_content = _render_toml_with_signature(CoreConfig, default_config)
         path.write_text(toml_content, encoding="utf-8")
-    elif path.is_dir():
-        # 如果路径存在但是目录，抛出清晰的错误
-        raise RuntimeError(
-            f"配置路径是一个目录，不是文件: {config_path}. "
-            f"请删除该目录或指定不同的配置文件路径。"
-        )
-    else:
-        # 从文件加载配置
-        _global_config = CoreConfig.load(config_path, auto_update=True)
+
+    _global_config = CoreConfig.load(config_path, auto_update=True)
 
     return _global_config
 

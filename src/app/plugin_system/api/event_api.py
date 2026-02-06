@@ -4,9 +4,8 @@
 """
 from typing import Any
 
-from src.core.components.types import EventType
-from src.core.components.base.event_handler import BaseEventHandler
-from src.core.managers.event_manager import get_event_manager
+from src.core.components import EventType, BaseEventHandler
+from src.core.managers import get_event_manager
 
 
 # =============================================================================
@@ -27,7 +26,7 @@ async def publish_event(
         kwargs: 事件参数字典
 
     Returns:
-        Dict[str, Any]: 发布结果，包含最终决策和参数
+        dict[str, Any]: 发布结果，包含最终决策和参数
 
     Examples:
         >>> # 发布系统事件

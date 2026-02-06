@@ -21,7 +21,7 @@ from .model_client import StreamEvent
 from .payload import LLMPayload, Text, ToolCall
 from .roles import ROLE
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     from .request import LLMRequest
     from .types import ModelSet
 
@@ -216,7 +216,7 @@ class LLMResponse:
 
                 if event.tool_name or event.tool_args_delta or event.tool_call_id:
                     tool_acc.apply(event)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             # 有些 provider/SDK 会在流尾抛出“连接关闭”等异常。
             # 对于带 buffer 的消费方式，这会导致最后未 flush 的片段丢失。
             # 这里先记录异常，确保尾段 flush，再把异常抛出。

@@ -225,7 +225,7 @@ def _merge_with_model_defaults(
     保留 raw 中能通过字段类型校验的值；不合法的值回退到默认值/占位值。
     """
 
-    merged: ConfigData = {}
+    merged: dict[str, Any] = {}
     for section in _iter_sections(config_model):
         raw_section = raw.get(section.name)
 

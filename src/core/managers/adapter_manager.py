@@ -9,16 +9,19 @@ from typing import TYPE_CHECKING
 
 from src.kernel.event import get_event_bus, EventDecision
 from src.kernel.logger import get_logger
-from src.core.components.registry import get_global_registry
-from src.core.components.state_manager import get_global_state_manager
-from src.core.components.types import ComponentState, EventType, ComponentType
+from src.core.components import (
+    get_global_registry,
+    get_global_state_manager,
+    ComponentState,
+    EventType,
+    ComponentType,
+)
 
 if TYPE_CHECKING:
-    from src.core.components.base.adapter import BaseAdapter
-    from src.core.managers.plugin_manager import PluginManager
+    from src.core.components import BaseAdapter
+    from src.core.managers import PluginManager
 
 logger = get_logger("adapter_manager")
-
 
 
 class AdapterManager:
@@ -132,7 +135,7 @@ class AdapterManager:
             state_manager = get_global_state_manager()
             await state_manager.set_state_async(signature, ComponentState.ACTIVE)
 
-            logger.info(f"✅ 适配器启动成功: {signature}")
+            logger.info(f"适配器启动成功: {signature}")
             return True
 
         except Exception as e:
@@ -177,7 +180,7 @@ class AdapterManager:
             state_manager = get_global_state_manager()
             await state_manager.set_state_async(signature, ComponentState.INACTIVE)
 
-            logger.info(f"✅ 适配器停止成功: {signature}")
+            logger.info(f"适配器停止成功: {signature}")
             return True
 
         except Exception as e:
@@ -208,7 +211,7 @@ class AdapterManager:
                 return False
 
         # 等待一小段时间确保完全停止
-        await asyncio.sleep(1)
+        await asyncio.sleep(3)
 
         # 重新启动适配器（即使还在_active_adapters中，也要重新启动）
         # 先从_active_adapters中移除旧的实例
@@ -300,10 +303,14 @@ class AdapterManager:
             >>> {'bot_id': '12345678', 'bot_nickname': 'MyBot'}
         """
         for adapter in self._active_adapters.values():
-            if hasattr(adapter, "platform") and getattr(adapter, "platform") == platform:
+            if (
+                hasattr(adapter, "platform")
+                and getattr(adapter, "platform") == platform
+            ):
                 return await adapter.get_bot_info()
         return None
-    
+
+
 # 全局适配器管理器实例
 _global_adapter_manager: "AdapterManager | None" = None
 
@@ -332,12 +339,14 @@ def reset_adapter_manager() -> None:
     global _global_adapter_manager
     _global_adapter_manager = None
 
+
 def initialize_adapter_manager() -> None:
     """初始化适配器管理器。
 
     主要用于在应用启动时进行必要的初始化操作。
     """
     get_event_bus().subscribe(EventType.ON_ALL_PLUGIN_LOADED, on_all_plugins_loaded)
+
 
 async def on_all_plugins_loaded(_: str, params: dict) -> tuple[EventDecision, dict]:
     """所有插件加载完毕后，启动所有注册的适配器。
@@ -352,18 +361,18 @@ async def on_all_plugins_loaded(_: str, params: dict) -> tuple[EventDecision, di
     # 通过 ComponentRegistry 获取所有类型为 ADAPTER 的组件
     registry = get_global_registry()
     adapter_components = registry.get_by_type(ComponentType.ADAPTER)
-    
+
     if not adapter_components:
         logger.info("没有注册任何适配器")
         return (EventDecision.SUCCESS, params)
-    
+
     logger.info(f"发现 {len(adapter_components)} 个适配器，开始启动...")
-    
+
     # 启动所有适配器
     manager = get_adapter_manager()
     started_adapters = []
     failed_adapters = []
-    
+
     for adapter_signature in adapter_components.keys():
         try:
             success = await manager.start_adapter(adapter_signature)
@@ -375,20 +384,21 @@ async def on_all_plugins_loaded(_: str, params: dict) -> tuple[EventDecision, di
         except Exception as e:
             failed_adapters.append(adapter_signature)
             logger.error(f"❌ 启动适配器 '{adapter_signature}' 时发生异常: {e}")
-    
+
     # 记录结果
     total = len(adapter_components)
     success_count = len(started_adapters)
     logger.info(f"适配器启动完成: 成功 {success_count}/{total}")
-    
+
     if failed_adapters:
         logger.warning(f"以下适配器启动失败: {', '.join(failed_adapters)}")
-    
+
     return (EventDecision.SUCCESS, params)
+
 
 # 避免循环导入的延迟导入
 def _get_plugin_manager() -> "PluginManager":
     """延迟导入插件管理器以避免循环导入。"""
-    from src.core.managers.plugin_manager import get_plugin_manager as _get_plugin_manager
-    return _get_plugin_manager()
+    from src.core.managers import get_plugin_manager as _get_plugin_manager
 
+    return _get_plugin_manager()

@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 
 if TYPE_CHECKING:
-    from src.core.components.base.plugin import BasePlugin
+    from src.core.components import BasePlugin
 
 
 class BaseRouter(ABC):
@@ -94,10 +94,10 @@ class BaseRouter(ABC):
             >>> signature = SendEmoji.get_signature()
             >>> "my_plugin:action:send_emoji"
         """
-        if hasattr(cls, "_signature_") and cls._signature_:  # type: ignore
-            return cls._signature_  # type: ignore
-        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.router_name:  # type: ignore
-            return f"{cls._plugin_}:router:{cls.router_name}"  # type: ignore
+        if hasattr(cls, "_signature_") and cls._signature_:
+            return cls._signature_
+        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.router_name:
+            return f"{cls._plugin_}:router:{cls.router_name}"
         return None
     
     @abstractmethod

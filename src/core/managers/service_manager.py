@@ -9,11 +9,10 @@ from typing import TYPE_CHECKING
 
 from src.kernel.logger import get_logger
 
-from src.core.components.registry import get_global_registry
-from src.core.components.types import ComponentType
+from src.core.components import get_global_registry, ComponentType
 
 if TYPE_CHECKING:
-    from src.core.components.base.service import BaseService
+    from src.core.components import BaseService
 
 
 logger = get_logger("service_manager")
@@ -48,7 +47,9 @@ class ServiceManager:
         registry = get_global_registry()
         return registry.get_by_type(ComponentType.SERVICE)
 
-    def get_services_for_plugin(self, plugin_name: str) -> dict[str, type["BaseService"]]:
+    def get_services_for_plugin(
+        self, plugin_name: str
+    ) -> dict[str, type["BaseService"]]:
         """获取指定插件的所有 Service 组件。
 
         Args:
@@ -102,7 +103,7 @@ class ServiceManager:
         if not sig_info:
             return None
 
-        from src.core.managers.plugin_manager import get_plugin_manager
+        from src.core.managers import get_plugin_manager
 
         plugin_manager = get_plugin_manager()
         plugin = plugin_manager.get_plugin(sig_info["plugin_name"])
@@ -144,7 +145,7 @@ class ServiceManager:
             return {
                 "plugin_name": sig_info["plugin_name"],
                 "component_type": sig_info["component_type"].value,
-                "component_name": sig_info["component_name"]
+                "component_name": sig_info["component_name"],
             }
         except ValueError as e:
             logger.error(f"解析签名失败: {signature} - {e}")

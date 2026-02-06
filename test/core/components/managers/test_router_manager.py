@@ -11,7 +11,7 @@ from src.core.managers.router_manager import (
     get_router_manager,
 )
 from src.core.components.base.router import BaseRouter
-from src.core.components.base.plugin import BasePlugin
+from src.core.components import BasePlugin
 from src.core.components.registry import ComponentRegistry
 from src.core.transport.router.http_server import HTTPServer
 
@@ -262,7 +262,7 @@ class TestRouterManager:
 
         with patch("src.core.managers.router_manager.get_global_registry") as mock_registry, \
              patch("src.core.managers.router_manager.get_http_server") as mock_http, \
-               patch("src.core.managers.plugin_manager.get_plugin_manager") as mock_get_pm:
+               patch("src.core.managers.get_plugin_manager") as mock_get_pm:
             mock_registry.return_value = registry
             mock_http.return_value = http_server
             mock_get_pm.return_value = mock_plugin_manager

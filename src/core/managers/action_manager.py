@@ -8,17 +8,14 @@ Action 是"主动的响应"，通过 LLM Tool Calling 调用。
 from typing import TYPE_CHECKING, Any
 
 from src.kernel.logger import get_logger
-from src.kernel.llm.payload.tooling import LLMUsable
+from src.kernel.llm import LLMUsable
 from src.kernel.concurrency import get_task_manager
 
-from src.core.components.registry import get_global_registry
-from src.core.components.types import ChatType, ComponentType
+from src.core.components import get_global_registry, ChatType, ComponentType
 
 if TYPE_CHECKING:
-    from src.core.components.base.action import BaseAction
-    from src.core.components.base.plugin import BasePlugin
-    from src.core.models.message import Message
-    from src.core.models.stream import ChatStream, StreamContext
+    from src.core.components import BaseAction, BasePlugin
+    from src.core.models import Message, ChatStream, StreamContext
 
 
 logger = get_logger("action_manager")
@@ -102,7 +99,10 @@ class ActionManager:
 
         for signature, action_cls in all_actions.items():
             # 检查 chat_type 兼容性
-            if action_cls.chat_type != ChatType.ALL and action_cls.chat_type != chat_type:
+            if (
+                action_cls.chat_type != ChatType.ALL
+                and action_cls.chat_type != chat_type
+            ):
                 continue
 
             # 检查 chatter_allow
@@ -200,7 +200,7 @@ class ActionManager:
 
         for action_cls in actions:
             # 构建签名
-            signature = self._build_signature(action_cls)   # type: ignore
+            signature = self._build_signature(action_cls)  # type: ignore
             schema = self.get_action_schema(signature)
             if schema:
                 schemas.append(schema)
@@ -246,7 +246,9 @@ class ActionManager:
         # Collection 门控：Action 是否可用取决于当前 stream 的解包状态
         from src.core.managers.collection_manager import get_collection_manager
 
-        if not get_collection_manager().is_component_available(signature, message.stream_id):
+        if not get_collection_manager().is_component_available(
+            signature, message.stream_id
+        ):
             raise RuntimeError(f"Action 在当前聊天流未解包启用: {signature}")
 
         # 获取或创建 ChatStream（使用 StreamManager）
@@ -257,14 +259,14 @@ class ActionManager:
 
         # 如果流不存在，创建新的流
         if not chat_stream:
-            group_id = message.extra.get("group_id") if hasattr(message, "extra") else ""
-            if not group_id and hasattr(message, "extra"):
-                group_id = message.extra.get("target_group_id") or ""
+            group_id = message.extra.get("group_id") or message.extra.get(
+                "target_group_id"
+            )
 
             chat_stream = await stream_manager.get_or_create_stream(
                 platform=message.platform,
                 user_id=message.sender_id,
-                group_id=group_id,
+                group_id=str(group_id) if group_id else "",
                 chat_type=message.chat_type,
             )
 
@@ -304,7 +306,7 @@ class ActionManager:
 
     async def modify_actions(
         self,
-        chat_stream: "ChatStream",
+        stream_id: str,
         message_content: str = "",
     ) -> list[str]:
         """修改动作列表，根据上下文过滤和激活动作。
@@ -314,7 +316,7 @@ class ActionManager:
         2. 调用 go_activate 方法进行激活判定
 
         Args:
-            chat_stream: 聊天流实例
+            stream_id: 聊天流 ID
             message_content: 当前消息内容，用于激活判定
 
         Returns:
@@ -322,14 +324,17 @@ class ActionManager:
 
         Examples:
             >>> available_actions = await manager.modify_actions(
-            ...     chat_stream=stream,
+            ...     stream_id=stream.stream_id,
             ...     message_content="你好"
             ... )
         """
-        logger.debug(
-            f"[{chat_stream.stream_id}] 开始动作修改流程"
-        )
+        logger.debug(f"[{stream_id}] 开始动作修改流程")
 
+        from src.core.managers.stream_manager import get_stream_manager
+
+        chat_stream = await get_stream_manager().get_or_create_stream(
+            stream_id=stream_id
+        )
         # 获取所有动作类
         all_actions = self.get_all_actions()
         removals: list[tuple[str, str]] = []
@@ -354,8 +359,10 @@ class ActionManager:
 
         # 日志记录
         if removals:
-            removals_summary = " | ".join([f"{name}({reason})" for name, reason in removals])
-            logger.info(f"[{chat_stream.stream_id}] 移除动作: {removals_summary}")
+            removals_summary = " | ".join(
+                [f"{name}({reason})" for name, reason in removals]
+            )
+            logger.info(f"[{stream_id}] 移除动作: {removals_summary}")
 
         available_text = "、".join(available_actions) if available_actions else "无"
         logger.info(f"[{chat_stream.stream_id}] 可用动作: {available_text}")
@@ -389,9 +396,7 @@ class ActionManager:
                     types_str = ", ".join(action_cls.associated_types)
                     reason = f"适配器不支持（需要: {types_str}）"
                     type_mismatched.append((signature, reason))
-                    logger.debug(
-                        f"[移除动作] {signature}：{reason}"
-                    )
+                    logger.debug(f"[移除动作] {signature}：{reason}")
 
         return type_mismatched
 
@@ -418,7 +423,7 @@ class ActionManager:
             ...     actions, stream, "你好"
             ... )
         """
-        from src.core.managers.plugin_manager import get_plugin_manager
+        from src.core.managers import get_plugin_manager
 
         deactivated_actions: list[tuple[str, str]] = []
         plugin_manager = get_plugin_manager()
@@ -439,16 +444,17 @@ class ActionManager:
             # 获取真实的 plugin 实例
             plugin = plugin_manager.get_plugin(plugin_name)
             if not plugin:
-                logger.warning(f"未找到 Plugin 实例: {plugin_name}，跳过 Action: {signature}")
-                deactivated_actions.append((signature, f"未找到 Plugin 实例: {plugin_name}"))
+                logger.warning(
+                    f"未找到 Plugin 实例: {plugin_name}，跳过 Action: {signature}"
+                )
+                deactivated_actions.append(
+                    (signature, f"未找到 Plugin 实例: {plugin_name}")
+                )
                 continue
 
             # 创建 Action 实例
             try:
-                action_instance = action_cls(
-                    chat_stream=chat_stream,
-                    plugin=plugin
-                )
+                action_instance = action_cls(chat_stream=chat_stream, plugin=plugin)
                 # 设置消息内容供 go_activate 使用
                 action_instance._last_message = message_content
 
@@ -467,7 +473,9 @@ class ActionManager:
                 f"[{chat_stream.stream_id}] 并行执行激活判断，任务数: {len(tasks)}"
             )
             try:
-                results = await get_task_manager().gather(*tasks, return_exceptions=True)
+                results = await get_task_manager().gather(
+                    *tasks, return_exceptions=True
+                )
 
                 # 处理结果
                 for signature, result in zip(signatures, results, strict=False):
@@ -475,18 +483,20 @@ class ActionManager:
                         logger.error(
                             f"[{chat_stream.stream_id}] 激活判断 {signature} 时出错: {result}"
                         )
-                        deactivated_actions.append((signature, f"激活判断出错: {result}"))
+                        deactivated_actions.append(
+                            (signature, f"激活判断出错: {result}")
+                        )
                     elif not result:
                         # go_activate 返回 False，不激活
-                        deactivated_actions.append((signature, "go_activate 返回 False"))
+                        deactivated_actions.append(
+                            (signature, "go_activate 返回 False")
+                        )
                         logger.debug(
                             f"[{chat_stream.stream_id}] 未激活动作: {signature}"
                         )
                     else:
                         # go_activate 返回 True，激活
-                        logger.debug(
-                            f"[{chat_stream.stream_id}] 激活动作: {signature}"
-                        )
+                        logger.debug(f"[{chat_stream.stream_id}] 激活动作: {signature}")
 
             except Exception as e:
                 logger.error(f"[{chat_stream.stream_id}] 并行激活判断失败: {e}")

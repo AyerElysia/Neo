@@ -7,12 +7,25 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
+
+from src.core.config import CORE_VERSION
 
 from .console_ui import ConsoleUIManager, UILevel
 from .exceptions import BotInitializationError, BotRuntimeError, BotShutdownError
 from .signal_handler import SignalHandler
 
+if TYPE_CHECKING:
+    from src.core.config import CoreConfig
+    from src.core.components import PluginLoader, PluginManifest
+    from src.core.managers import PluginManager
+    from src.core.transport import MessageReceiver, HTTPServer, SinkManager
+    from src.kernel.concurrency import TaskManager, WatchDog
+    from src.kernel.event import EventBus
+    from src.kernel.logger import Logger
+    from src.kernel.scheduler import UnifiedScheduler
+    from src.kernel.storage import JSONStore
+    from src.kernel.vector_db import VectorDBBase
 
 class Bot:
     """Neo-MoFox Bot 主类
@@ -34,7 +47,7 @@ class Bot:
     """
 
     bot_name: str = "Neo-MoFox"
-    bot_version: str = "0.1.0"
+    bot_version: str = CORE_VERSION
 
     def __init__(
         self,
@@ -64,25 +77,27 @@ class Bot:
         self._shutdown_requested = False
 
         # Kernel 层组件（延迟初始化）
-        self.config: Any = None
-        self.logger: Any = None
-        self.event_bus: Any = None
-        self.task_manager: Any = None
-        self.watchdog: Any = None
-        self.vector_db: Any = None
-        self.scheduler: Any = None
-        self.storage: Any = None
+        self.config: CoreConfig | None = None
+        self.logger: Logger | None = None
+        self.event_bus: EventBus | None = None
+        self.task_manager: TaskManager | None = None
+        self.watchdog: WatchDog | None = None
+        self.vector_db: VectorDBBase | None = None
+        self.scheduler: UnifiedScheduler | None = None
+        self.storage: JSONStore | None = None
 
         # Core 层组件（延迟初始化）
-        self.plugin_loader: Any = None
-        self.plugin_manager: Any = None
-        self.http_server: Any = None
+        self.message_receiver: MessageReceiver | None = None
+        self.sink_manager: SinkManager | None = None
+        self.plugin_loader: PluginLoader | None = None
+        self.plugin_manager: PluginManager | None = None
+        self.http_server: HTTPServer | None = None
         self.load_order: list[str] = []
-        self.manifests: dict[str, Any] = {}
+        self.manifests: dict[str, PluginManifest] = {}
         self.load_results: dict[str, bool] = {}
 
         # 统计数据
-        self._stats: dict[str, Any] = {
+        self._stats: dict[str, int | bool | dict] = {
             "plugins_loaded": 0,
             "plugins_failed": 0,
             "components_by_type": {},
@@ -92,9 +107,10 @@ class Bot:
         """完整初始化流程
 
         按顺序初始化：
-        1. Kernel 层（8 步）
-        2. 插件发现
-        3. 插件加载
+        1. Kernel 层（9 步）
+        2. Core 层组件初始化
+        3. 插件发现
+        4. 插件加载
 
         Raises:
             BotInitializationError: 初始化失败
@@ -136,16 +152,17 @@ class Bot:
             raise BotInitializationError(str(e), "unknown") from e
 
     async def _initialize_kernel(self) -> None:
-        """初始化 Kernel 层（8 步）
+        """初始化 Kernel 层（9 步）
 
         1. Config
         2. Logger
         3. Event Bus
-        4. Database
-        5. Concurrency
-        6. VectorDB
-        7. Scheduler
-        8. Storage
+        4. Task Manager
+        5. Scheduler
+        6. WatchDog
+        7. Database
+        8. VectorDB
+        9. Storage
         """
         self.ui.update_phase_status("初始化内核", "启动中...")
 
@@ -157,19 +174,37 @@ class Bot:
         self.ui.update_phase_status("配置", "已加载")
 
         # Step 2: Logger
-        from src.kernel.logger import get_logger, initialize_logger_system
+        from src.kernel.logger import get_logger, initialize_logger_system, COLOR
 
         initialize_logger_system(log_dir=self.log_dir, log_level=self.config.bot.log_level)
-        self.logger = get_logger("bot")
+        self.logger = get_logger(name="console", display="控制台", color=COLOR.BLUE)
         self.ui.update_phase_status("日志", "已初始化")
 
         # Step 3: Event Bus
         from src.kernel.event import get_event_bus
 
         self.event_bus = get_event_bus()
-        self.ui.update_phase_status("事件总线", "已启动")
+        self.ui.update_phase_status("事件总线", "已初始化")
 
-        # Step 4: Database
+        # Step 4: Task Manager
+        from src.kernel.concurrency import get_task_manager
+
+        self.task_manager = get_task_manager()
+        self.ui.update_phase_status("任务管理器", "已初始化")
+
+        # Step 5: Scheduler
+        from src.kernel.scheduler import get_unified_scheduler
+
+        self.scheduler = get_unified_scheduler()
+        self.ui.update_phase_status("调度器", "已初始化")
+
+        # Step 6: WatchDog
+        from src.kernel.concurrency import WatchDog
+
+        self.watchdog = WatchDog()
+        self.ui.update_phase_status("看门狗", "已初始化")
+
+        # Step 7: Database
         from src.kernel.db import init_database_from_config
 
         db_cfg = self.config.database
@@ -193,14 +228,7 @@ class Bot:
         self._stats["db_connected"] = True
         self.ui.update_phase_status("数据库", "已连接")
 
-        # Step 5: Concurrency
-        from src.kernel.concurrency import get_task_manager, get_watchdog
-
-        self.task_manager = get_task_manager()
-        self.watchdog = get_watchdog()
-        self.ui.update_phase_status("并发管理", "已初始化")
-
-        # Step 6: VectorDB
+        # Step 8: VectorDB
         from src.kernel.vector_db import get_vector_db_service
 
         # 确保 data 目录存在
@@ -208,13 +236,7 @@ class Bot:
         self.vector_db = get_vector_db_service("data/chroma_db")
         self.ui.update_phase_status("向量数据库", "已初始化")
 
-        # Step 7: Scheduler
-        from src.kernel.scheduler import get_unified_scheduler
-
-        self.scheduler = get_unified_scheduler()
-        self.ui.update_phase_status("调度器", "已初始化")
-
-        # Step 8: Storage
+        # Step 9: Storage
         from src.kernel.storage import JSONStore
 
         # 确保 data 目录存在
@@ -227,6 +249,8 @@ class Bot:
 
         包括插件管理器、Action 管理器、Chatter 管理器、Command 管理器等。
         """
+        assert self.config is not None
+
         # Step 1: 初始化 MessageReceiver 和 SinkManager
         from src.core.transport import MessageReceiver, SinkManager
         from src.core.transport.sink import set_sink_manager
@@ -254,12 +278,13 @@ class Bot:
         # Step 3: 启动 HTTP 服务器
         from src.core.transport.router.http_server import get_http_server
         
-        host = "127.0.0.1"
-        port = 8000
-        
-        self.http_server = get_http_server(host=host, port=port)
-        await self.http_server.start()
-        self.ui.update_phase_status("HTTP服务器", "已启动")
+        if self.config.http_router.enable_http_router:
+            host = self.config.http_router.http_router_host
+            port = self.config.http_router.http_router_port
+            
+            self.http_server = get_http_server(host=host, port=port)
+            await self.http_server.start()
+            self.ui.update_phase_status("HTTP服务器", "已启动")
 
     async def _discover_plugins(self) -> None:
         """发现插件并解析依赖"""
@@ -275,7 +300,7 @@ class Bot:
         # 显示插件加载计划
         self.ui.display_plugin_plan(self.load_order, self.manifests)
 
-    async def _load_plugins(self) -> None:
+    async def _load_plugins(self) -> dict[str, bool]:
         """加载插件"""
         self.ui.update_phase_status("加载插件", "启动中...")
 
@@ -306,10 +331,14 @@ class Bot:
         self._stats["plugins_failed"] = len(
             [r for r in self.load_results.values() if not r]
         )
-        from src.kernel.event import get_event_bus
-        from src.core.components.types import EventType
 
-        await get_event_bus().publish(EventType.ON_ALL_PLUGIN_LOADED, {})
+        # 发布插件加载完成事件
+        assert self.event_bus is not None
+
+        from src.core.components.types import EventType
+        await self.event_bus.publish(EventType.ON_ALL_PLUGIN_LOADED, {})
+        
+        return self.load_results
 
     async def run(self) -> None:
         """主运行循环
@@ -319,6 +348,11 @@ class Bot:
         """
         if not self._initialized:
             raise BotRuntimeError("Bot 未初始化。请先调用 initialize()。")
+
+        # 断言核心组件已初始化（由于_initialized=True，这些不应该为None）
+        assert self.logger is not None
+        assert self.scheduler is not None
+        assert self.task_manager is not None
 
         self._running = True
 
@@ -378,12 +412,13 @@ class Bot:
 
     async def _update_runtime_stats(self) -> None:
         """更新运行时统计数据（用于仪表盘）"""
+        assert self.task_manager is not None
+
         stats = {
             "plugins_loaded": self._stats["plugins_loaded"],
             "plugins_failed": self._stats["plugins_failed"],
             "components_by_type": self._stats["components_by_type"],
             "tasks_active": len(self.task_manager.get_all_tasks()),
-            "tasks_completed": 0,  # TODO: 从 TaskManager 获取
             "db_connected": self._stats["db_connected"],
             "scheduler_running": self._stats["scheduler_running"],
         }
@@ -403,6 +438,7 @@ class Bot:
         """
         results = {}
 
+        assert self.plugin_manager is not None
         try:
             if plugin_name:
                 # 单插件重载
@@ -426,7 +462,8 @@ class Bot:
                 results = await self._load_plugins()
 
         except Exception as e:
-            self.logger.error(f"插件重载失败: {e}", exc_info=e)
+            if self.logger:
+                self.logger.error(f"插件重载失败: {e}", exc_info=e)
             if plugin_name:
                 results[plugin_name] = False
 
@@ -483,8 +520,9 @@ class Bot:
             await self._unload_all_plugins()
 
             # 3. 停止调度器
-            await self.scheduler.stop()
-            self._stats["scheduler_running"] = False
+            if self.scheduler:
+                await self.scheduler.stop()
+                self._stats["scheduler_running"] = False
 
             # 4. 停止 HTTP 服务器
             if self.http_server and self.http_server.is_running():
@@ -497,15 +535,16 @@ class Bot:
                 self.watchdog.stop()
 
             # 6. 停止任务管理器（取消所有活动任务）
-            active_tasks = self.task_manager.get_active_tasks()
-            for task_info in active_tasks:
-                self.task_manager.cancel_task(task_info.task_id)
+            if self.task_manager:
+                active_tasks = self.task_manager.get_active_tasks()
+                for task_info in active_tasks:
+                    self.task_manager.cancel_task(task_info.task_id)
 
-            # 等待所有非守护任务完成
-            await self.task_manager.wait_all_tasks()
+                # 等待所有非守护任务完成
+                await self.task_manager.wait_all_tasks()
 
-            # 清理已完成的任务
-            self.task_manager.cleanup_tasks()
+                # 清理已完成的任务
+                self.task_manager.cleanup_tasks()
 
             # 7. 关闭数据库
             from src.kernel.db import close_engine

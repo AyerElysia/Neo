@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from src.core.components.types import EventType
 
 if TYPE_CHECKING:
-    from src.core.components.base.plugin import BasePlugin
+    from src.core.components import BasePlugin
 
 
 class BaseEventHandler(ABC):
@@ -77,10 +77,10 @@ class BaseEventHandler(ABC):
             >>> signature = MyEventHandler.get_signature()
             >>> "my_plugin:event_handler:my_handler"
         """
-        if hasattr(cls, "_signature_") and cls._signature_:  # type: ignore
-            return cls._signature_  # type: ignore
-        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.handler_name:  # type: ignore
-            return f"{cls._plugin_}:event_handler:{cls.handler_name}"  # type: ignore
+        if hasattr(cls, "_signature_") and cls._signature_:
+            return cls._signature_
+        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.handler_name:
+            return f"{cls._plugin_}:event_handler:{cls.handler_name}"
         return None
     
     @abstractmethod

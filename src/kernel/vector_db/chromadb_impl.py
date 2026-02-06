@@ -92,6 +92,9 @@ class ChromaDBImpl(VectorDBBase):
         if name in self._collections:
             return self._collections[name]
 
+        if not self._client:
+            return None
+
         try:
             collection = await asyncio.to_thread(
                 self._client.get_or_create_collection,
@@ -321,10 +324,13 @@ class ChromaDBImpl(VectorDBBase):
         if not self._initialized or not self._client:
             await self.initialize(self._path)
 
+        if not self._client:
+            return
+
         try:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
-                None, lambda: self._client.delete_collection(name=name)
+                None, lambda: self._client.delete_collection(name=name) # type: ignore
             )
             if name in self._collections:
                 del self._collections[name]

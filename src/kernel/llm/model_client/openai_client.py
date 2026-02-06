@@ -208,11 +208,12 @@ class OpenAIChatClient:
             headers = {"Connection": "close"}
 
         transport = _LoggingAsyncTransport(httpx.AsyncHTTPTransport())
-        http_client = httpx.AsyncClient(
-            transport=transport,
-            limits=limits,
-            headers=headers,
-        )
+        http_client_kwargs: dict[str, Any] = {"transport": transport}
+        if limits:
+            http_client_kwargs["limits"] = limits
+        if headers:
+            http_client_kwargs["headers"] = headers
+        http_client = httpx.AsyncClient(**http_client_kwargs)
 
         kwargs: dict[str, Any] = {"api_key": api_key, "http_client": http_client}
         if base_url:

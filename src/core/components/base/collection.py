@@ -7,11 +7,11 @@
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
-from src.core.components.types import ChatType
-from src.kernel.llm.payload.tooling import LLMUsable
+from src.core.components import ChatType
+from src.kernel.llm import LLMUsable
 
 if TYPE_CHECKING:
-    from src.core.components.base.plugin import BasePlugin
+    from src.core.components import BasePlugin
 
 
 class BaseCollection(ABC, LLMUsable):
@@ -120,10 +120,10 @@ class BaseCollection(ABC, LLMUsable):
             >>> signature = MyCollection.get_signature()
             >>> "my_plugin:collection:my_collection"
         """
-        if hasattr(cls, "_signature_") and cls._signature_:  # type: ignore
-            return cls._signature_  # type: ignore
-        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.collection_name:  # type: ignore
-            return f"{cls._plugin_}:collection:{cls.collection_name}"  # type: ignore
+        if hasattr(cls, "_signature_") and cls._signature_:
+            return cls._signature_
+        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.collection_name:
+            return f"{cls._plugin_}:collection:{cls.collection_name}"
         return None
 
     @abstractmethod

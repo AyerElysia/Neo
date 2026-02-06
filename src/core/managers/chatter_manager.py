@@ -9,11 +9,11 @@ from typing import TYPE_CHECKING
 
 from src.kernel.logger import get_logger
 
-from src.core.components.registry import get_global_registry
+from src.core.components import get_global_registry
 from src.core.components.types import ChatType, ComponentType, parse_signature
 
 if TYPE_CHECKING:
-    from src.core.components.base.chatter import BaseChatter
+    from src.core.components import BaseChatter
 
 
 logger = get_logger("chatter_manager")
@@ -165,7 +165,7 @@ class ChatterManager:
             logger.warning("无法解析 Chatter 的插件名称，跳过绑定")
             return None
 
-        from src.core.managers.plugin_manager import get_plugin_manager
+        from src.core.managers import get_plugin_manager
 
         plugin = get_plugin_manager().get_plugin(plugin_name)
         if not plugin:

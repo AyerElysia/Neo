@@ -1,10 +1,10 @@
-"""测试 src.core.components.base.plugin 模块。"""
+"""测试 src.core.components 模块。"""
 
 from unittest.mock import MagicMock
 
 import pytest
 
-from src.core.components.base.plugin import BasePlugin
+from src.core.components import BasePlugin
 
 
 class TestBasePlugin:

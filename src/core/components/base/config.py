@@ -60,7 +60,7 @@ class BaseConfig(ABC, ConfigBase):
             >>> Path("config/plugins/my_plugin/config.toml")
         """
         # Check for _plugin_ (set by plugin manager) or plugin_name (class attribute)
-        plugin_name = getattr(cls, "_plugin_", None) or getattr(cls, "plugin_name", None)
+        plugin_name = getattr(cls, "_plugin_", None)
         if plugin_name:
             return Path("config") / "plugins" / plugin_name / f"{cls.config_name}.toml"
         return None
@@ -76,13 +76,12 @@ class BaseConfig(ABC, ConfigBase):
             >>> signature = MyPluginConfig.get_signature()
             >>> "my_plugin:config:config"
         """
-        if hasattr(cls, "_signature_") and cls._signature_:  # type: ignore
-            return cls._signature_  # type: ignore
-        # Check for _plugin_ (set by plugin manager) or plugin_name (class attribute)
-        plugin_name = getattr(cls, "_plugin_", None) or getattr(cls, "plugin_name", None)
-        if plugin_name and cls.config_name:
-            return f"{plugin_name}:config:{cls.config_name}"
+        if hasattr(cls, "_signature_") and cls._signature_:
+            return cls._signature_
+        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.config_name:
+            return f"{cls._plugin_}:config:{cls.config_name}"
         return None
+    
 
     @classmethod
     def generate_default(cls, path: str | Path | None = None) -> None:
@@ -178,6 +177,9 @@ class BaseConfig(ABC, ConfigBase):
             >>> config = MyPluginConfig.reload()
         """
         path = cls.get_default_path()
+        if not path:
+            raise RuntimeError("无法确定默认配置路径，插件名称未注入")
+        
         if not path.exists():
             raise FileNotFoundError(f"配置文件未找到: {path}")
 

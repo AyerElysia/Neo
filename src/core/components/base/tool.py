@@ -12,7 +12,7 @@ from src.core.components.utils import parse_function_signature
 from src.kernel.llm.payload.tooling import LLMUsable
 
 if TYPE_CHECKING:
-    from src.core.components.base.plugin import BasePlugin
+    from src.core.components import BasePlugin
 
 
 class BaseTool(ABC, LLMUsable):
@@ -75,10 +75,10 @@ class BaseTool(ABC, LLMUsable):
             >>> signature = CalculatorTool.get_signature()
             >>> "my_plugin:tool:calculator"
         """
-        if hasattr(cls, "_signature_") and cls._signature_:  # type: ignore
-            return cls._signature_  # type: ignore
-        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.tool_name:  # type: ignore
-            return f"{cls._plugin_}:tool:{cls.tool_name}"  # type: ignore
+        if hasattr(cls, "_signature_") and cls._signature_:
+            return cls._signature_
+        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.tool_name:
+            return f"{cls._plugin_}:tool:{cls.tool_name}"
         return None
     
     @abstractmethod

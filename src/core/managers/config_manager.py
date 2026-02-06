@@ -8,7 +8,7 @@ from typing import Type
 
 
 from src.kernel.logger import get_logger
-from src.core.components.base.config import BaseConfig
+from src.core.components import BaseConfig
 
 
 logger = get_logger("config_manager")

@@ -11,7 +11,7 @@ from mofox_wire import MessageEnvelope
 from src.kernel.logger import get_logger
 
 if TYPE_CHECKING:
-    from src.core.transport.message_receive import MessageReceiver
+    from src.core.transport import MessageReceiver
 
 logger = get_logger("sink_manager")
 

@@ -9,14 +9,20 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 from src.core.components.types import ChatType
+from src.core.components import BaseAction, BaseTool, BaseCollection
+from src.core.managers import (
+    get_collection_manager,
+    get_tool_use,
+    get_action_manager,
+    get_stream_manager,
+)
+from src.kernel.concurrency import get_task_manager
+from src.kernel.logger import get_logger, COLOR
 
 if TYPE_CHECKING:
-    from src.core.components.base.plugin import BasePlugin
-    from src.core.components.base.action import BaseAction
-    from src.core.components.base.tool import BaseTool
-    from src.core.components.base.collection import BaseCollection
-    from src.core.models.message import Message
-    from src.kernel.llm.payload.tooling import LLMUsable
+    from src.core.components import BasePlugin
+    from src.core.models import Message
+    from src.kernel.llm import LLMUsable
 
 
 @dataclass
@@ -85,11 +91,12 @@ class BaseChatter(ABC):
         ...     chatter_name = "my_chatter"
         ...     chatter_description = "我的聊天器"
         ...
-        ...     async def execute(self, unreads: list[Message]) -> Generator[ChatterResult, None, None]:
+        ...     async def execute(self, unreads: list[Message]) -> AsyncGenerator[ChatterResult, None]:
         ...         yield Wait("等待 LLM 响应")
         ...         # 执行逻辑...
         ...         yield Success("完成")
     """
+
     _plugin_: str
     _signature_: str
 
@@ -129,12 +136,12 @@ class BaseChatter(ABC):
             >>> signature = MyChatter.get_signature()
             >>> "my_plugin:chatter:my_chatter"
         """
-        if hasattr(cls, "_signature_") and cls._signature_:  # type: ignore
-            return cls._signature_  # type: ignore
-        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.chatter_name:  # type: ignore
-            return f"{cls._plugin_}:chatter:{cls.chatter_name}"  # type: ignore
+        if hasattr(cls, "_signature_") and cls._signature_:
+            return cls._signature_
+        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.chatter_name:
+            return f"{cls._plugin_}:chatter:{cls.chatter_name}"
         return None
-    
+
     @abstractmethod
     async def execute(
         self, unreads: list["Message"]
@@ -177,8 +184,7 @@ class BaseChatter(ABC):
             >>> [MyAction, MyTool, MyCollection]
         """
         from src.core.components.types import ComponentType, ComponentState
-        from src.core.components.state_manager import get_global_state_manager
-        from src.core.managers.collection_manager import get_collection_manager
+        from src.core.components import get_global_state_manager
 
         usables: list[type["LLMUsable"]] = []
 
@@ -204,8 +210,13 @@ class BaseChatter(ABC):
                         ComponentType.COLLECTION.value,
                     ):
                         # Collection 解包只影响当前聊天流：对 Action/Tool 做 stream 级门控过滤
-                        if comp_type in (ComponentType.ACTION.value, ComponentType.TOOL.value):
-                            if not collection_manager.is_component_available(sig, self.stream_id):
+                        if comp_type in (
+                            ComponentType.ACTION.value,
+                            ComponentType.TOOL.value,
+                        ):
+                            if not collection_manager.is_component_available(
+                                sig, self.stream_id
+                            ):
                                 continue
                         usables.append(component_cls)
 
@@ -216,20 +227,118 @@ class BaseChatter(ABC):
     ) -> list[type["BaseTool | BaseAction | BaseCollection"]]:
         """修改 LLMUsable 组件列表。
 
-        子类可以重写此方法来过滤、排序或添加组件。
+        调用其go_activate方法进行激活判定，并核对associate_type，返回最终可用的组件列表。
 
         Args:
             llm_usables: 原始 LLMUsable 组件列表
 
         Returns:
             list[type["BaseTool" | "BaseAction" | "BaseCollection"]]: 修改后的组件列表
-
-        Examples:
-            >>> async def modify_llm_usables(self, llm_usables):
-            ...     # 只保留特定组件
-            ...     return [u for u in llm_usables if u.action_name != "blocked"]
         """
-        return llm_usables
+
+        logger = get_logger("chatter", display="聊天器", color=COLOR.MAGENTA)
+        chat_stream = await get_stream_manager().get_or_create_stream(
+            stream_id=self.stream_id
+        )
+        chat_context = chat_stream.context
+
+        removals: list[tuple[str, str]] = []
+        filtered: list[type["BaseTool | BaseAction | BaseCollection"]] = []
+
+        for usable_cls in llm_usables:
+            signature = usable_cls.get_signature() or usable_cls.__name__
+
+            if issubclass(usable_cls, BaseAction) and usable_cls.associated_types:
+                if not chat_context.check_types(usable_cls.associated_types):
+                    types_str = ", ".join(usable_cls.associated_types)
+                    reason = f"适配器不支持（需要: {types_str}）"
+                    removals.append((signature, reason))
+                    logger.debug(f"[移除组件] {signature}：{reason}")
+                    continue
+
+            filtered.append(usable_cls)
+
+        # 并行执行 go_activate（如果组件提供）
+        tasks = []
+        signatures = []
+        for usable_cls in filtered:
+            signature = usable_cls.get_signature() or usable_cls.__name__
+
+            try:
+                instance: BaseAction | BaseTool | BaseCollection
+                if issubclass(usable_cls, BaseAction):
+                    instance = usable_cls(chat_stream=chat_stream, plugin=self.plugin)
+
+                    current_msg = chat_context.current_message
+                    if current_msg:
+                        instance._last_message = (
+                            current_msg.processed_plain_text
+                            if current_msg.processed_plain_text
+                            else str(current_msg.content or "")
+                        )
+                elif issubclass(usable_cls, BaseTool):
+                    instance = usable_cls(plugin=self.plugin)
+                elif issubclass(usable_cls, BaseCollection):
+                    instance = usable_cls(plugin=self.plugin)
+                else:
+                    continue
+
+                go_activate = getattr(instance, "go_activate", None)
+                if not callable(go_activate):
+                    continue
+
+                tasks.append(go_activate())
+                signatures.append(signature)
+
+            except Exception as e:
+                logger.error(f"创建 LLMUsable 实例 {signature} 失败: {e}")
+                removals.append((signature, f"创建实例失败: {e}"))
+
+        if tasks:
+            logger.debug(
+                f"[{chat_stream.stream_id}] 并行执行激活判断，任务数: {len(tasks)}"
+            )
+            try:
+                results = await get_task_manager().gather(
+                    *tasks, return_exceptions=True
+                )
+
+                for signature, result in zip(signatures, results, strict=False):
+                    if isinstance(result, Exception):
+                        logger.error(
+                            f"[{chat_stream.stream_id}] 激活判断 {signature} 时出错: {result}"
+                        )
+                        removals.append((signature, f"激活判断出错: {result}"))
+                    elif not result:
+                        removals.append((signature, "go_activate 返回 False"))
+                        logger.debug(
+                            f"[{chat_stream.stream_id}] 未激活组件: {signature}"
+                        )
+                    else:
+                        logger.debug(f"[{chat_stream.stream_id}] 激活组件: {signature}")
+
+            except Exception as e:
+                logger.error(f"[{chat_stream.stream_id}] 并行激活判断失败: {e}")
+                removals.extend((sig, f"并行判断失败: {e}") for sig in signatures)
+
+        if removals:
+            removals_summary = " | ".join(
+                [f"{name}({reason})" for name, reason in removals]
+            )
+            logger.info(f"[{chat_stream.stream_id}] 移除组件: {removals_summary}")
+
+        removal_names = {name for name, _ in removals}
+        available = [
+            usable_cls
+            for usable_cls in filtered
+            if (usable_cls.get_signature() or usable_cls.__name__) not in removal_names
+        ]
+
+        logger.info(
+            f"[{chat_stream.stream_id}] 可用组件: {len(available)}/{len(llm_usables)}"
+        )
+
+        return available
 
     async def exec_llm_usable(
         self,
@@ -254,12 +363,6 @@ class BaseChatter(ABC):
             ...     param1="value1"
             ... )
         """
-        from src.core.components.base.action import BaseAction
-        from src.core.components.base.tool import BaseTool
-        from src.core.components.base.collection import BaseCollection
-        from src.core.managers.collection_manager import get_collection_manager
-        from src.core.managers.tool_manager.tool_use import get_tool_use
-        from src.core.managers.action_manager import get_action_manager
 
         sig = usable_cls.get_signature()
         if not sig:
@@ -307,8 +410,6 @@ class BaseChatter(ABC):
             >>> text, messages = await chatter.fetch_and_flush_unreads(format_as_group=False)
         """
         from datetime import datetime
-        from src.core.managers.stream_manager import get_stream_manager
-        from src.kernel.logger import get_logger
 
         logger = get_logger("chatter")
 
@@ -316,7 +417,9 @@ class BaseChatter(ABC):
         chat_stream = sm._streams.get(self.stream_id)
 
         if not chat_stream:
-            logger.warning(f"[{self.chatter_name}] 无法获取聊天流: {self.stream_id[:8]}")
+            logger.warning(
+                f"[{self.chatter_name}] 无法获取聊天流: {self.stream_id[:8]}"
+            )
             return "", []
 
         context = chat_stream.context
@@ -356,6 +459,8 @@ class BaseChatter(ABC):
         # Clear unread messages
         context.unread_messages.clear()
 
-        logger.debug(f"[{self.chatter_name}] 获取并flush了 {len(unread_messages)} 条未读消息")
+        logger.debug(
+            f"[{self.chatter_name}] 获取并flush了 {len(unread_messages)} 条未读消息"
+        )
 
         return formatted_text, unread_messages

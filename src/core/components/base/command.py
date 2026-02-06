@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from src.core.components.types import ChatType, PermissionLevel
 
 if TYPE_CHECKING:
-    from src.core.components.base.plugin import BasePlugin
+    from src.core.components import BasePlugin
 
 
 @dataclass
@@ -99,10 +99,10 @@ class BaseCommand(ABC):
             >>> signature = MyCommand.get_signature()
             >>> "my_plugin:command:my_command"
         """
-        if hasattr(cls, "_signature_") and cls._signature_:  # type: ignore
-            return cls._signature_  # type: ignore
-        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.command_name:  # type: ignore
-            return f"{cls._plugin_}:command:{cls.command_name}"  # type: ignore
+        if hasattr(cls, "_signature_") and cls._signature_:
+            return cls._signature_
+        if hasattr(cls, "_plugin_") and cls._plugin_ and cls.command_name:
+            return f"{cls._plugin_}:command:{cls.command_name}"
         return None
 
     @classmethod

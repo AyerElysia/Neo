@@ -15,13 +15,13 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from src.core.transport.distribution.tick import ConversationTick
-from src.kernel.logger import get_logger
+from src.kernel.logger import get_logger, COLOR
 
 if TYPE_CHECKING:
-    from src.core.models.stream import StreamContext
-    from src.core.transport.distribution.stream_loop_manager import StreamLoopManager
+    from src.core.models import StreamContext
+    from src.core.transport import StreamLoopManager
 
-logger = get_logger("conversation_loop", display="会话循环")
+logger = get_logger("conversation_loop", display="会话循环", color=COLOR.MAGENTA)
 
 
 # ============================================================================
@@ -143,13 +143,10 @@ async def run_chat_stream(
 
                 # 并发保护：Chatter 正在处理时跳过
                 if context.is_chatter_processing:
-                    if manager._recover_stale_processing_state(stream_id, context):
-                        logger.warning(f"[驱动器] stream={stream_id[:8]}, 处理标志残留已修复")
-                    else:
-                        logger.debug(
-                            f"[驱动器] stream={stream_id[:8]}, Chatter 正在处理，跳过 Tick#{tick.tick_count}"
-                        )
-                        continue
+                    logger.debug(
+                        f"[驱动器] stream={stream_id[:8]}, Chatter 正在处理，跳过 Tick#{tick.tick_count}"
+                    )
+                    continue
 
                 if tick.force_dispatch:
                     logger.info(f"[驱动器] stream={stream_id[:8]}, Tick#{tick.tick_count}, 强制分发")

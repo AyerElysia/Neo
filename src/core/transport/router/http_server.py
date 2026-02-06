@@ -11,7 +11,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from src.kernel.logger import get_logger, COLOR
-
+from src.kernel.concurrency import get_task_manager
 
 logger = get_logger("http_server", display="HTTP服务器", color=COLOR.CYAN)
 
@@ -71,7 +71,6 @@ class HTTPServer:
         self._running: bool = False
         self._server_task: asyncio.Task | None = None
 
-
     async def start(self) -> None:
         """启动服务器。
 
@@ -98,7 +97,9 @@ class HTTPServer:
         self._running = True
 
         # 在后台运行服务器
-        self._server_task = asyncio.create_task(self.server.serve())
+        self._server_task = (
+            get_task_manager().create_task(self.server.serve(), daemon=True).task
+        )
 
         logger.info(f"HTTP 服务器已启动: http://{self.host}:{self.port}")
 
