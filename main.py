@@ -5,6 +5,7 @@
 import tomllib
 import asyncio
 
+from src.app.runtime import UILevel
 
 def load_ui_level_from_config(config_path: str = "config/core.toml") -> "UILevel":  # type: ignore
     """从配置文件加载 UI 级别
@@ -15,7 +16,7 @@ def load_ui_level_from_config(config_path: str = "config/core.toml") -> "UILevel
     Returns:
         UILevel: UI 级别枚举值
     """
-    from src.app.runtime import UILevel
+    
 
     level_map = {
         "minimal": UILevel.MINIMAL,

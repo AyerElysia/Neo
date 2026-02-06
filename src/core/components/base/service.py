@@ -5,7 +5,7 @@ Service 暴露特定功能供其他插件或组件调用。
 可以实现 typing.Protocol 定义的接口标准（如 MemoryService, ConfigService 等）。
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.core.components.base.plugin import BasePlugin

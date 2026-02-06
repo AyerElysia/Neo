@@ -4,7 +4,6 @@
 集合是 LLMUsable 的集合体，可包含多个 Action、Tool 或嵌套的 Collection。
 """
 
-import random
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 

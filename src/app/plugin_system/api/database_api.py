@@ -3,8 +3,7 @@
 为插件提供简洁的数据库操作接口，将 kernel.db 的类方法扁平化为独立函数。
 """
 from collections.abc import AsyncIterator
-from functools import lru_cache
-from typing import Any, Generic, TypeVar
+from typing import Any, TypeVar
 
 from src.kernel.db import CRUDBase, QueryBuilder, AggregateQuery
 

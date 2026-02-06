@@ -38,7 +38,6 @@ from rich.progress import (
 from rich.rule import Rule
 from rich.spinner import Spinner
 from rich.status import Status
-from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
@@ -866,7 +865,7 @@ class ConsoleUIManager:
         header.add_column("center", ratio=2, justify="center")
         header.add_column("right", ratio=1, justify="right")
 
-        status_icon = Spinner("dots", style="green") if self._dashboard_running else "●"
+        Spinner("dots", style="green") if self._dashboard_running else "●"
         header.add_row(
             Text("Neo-MoFox Bot", style="cyan bold"),
             Text("实时仪表盘", style="dim"),

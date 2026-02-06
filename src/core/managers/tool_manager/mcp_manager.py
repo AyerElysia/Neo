@@ -3,7 +3,6 @@
 本模块提供 MCPManager 类，负责管理 MCP 服务器连接、工具发现和调用。
 """
 
-import asyncio
 import os
 from contextlib import AsyncExitStack
 from typing import Any
@@ -13,7 +12,6 @@ from mcp.client.stdio import stdio_client
 
 from src.kernel.logger import get_logger
 from src.core.config.mcp_config import MCPConfig
-from src.core.managers.config_manager import ConfigManager
 from src.core.managers.tool_manager.mcp_adapter import MCPToolAdapter
 
 logger = get_logger("mcp_manager")
