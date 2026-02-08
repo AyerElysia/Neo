@@ -12,9 +12,11 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.kernel.logger import get_logger
 
+from .exceptions import DatabaseConnectionError, DatabaseTransactionError
 from .engine import get_engine, get_configured_db_type
 
 logger = get_logger("database.session", display="DB 会话")
@@ -98,26 +100,38 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     session_factory = await get_session_factory()
 
-    async with session_factory() as session:
-        try:
-            # 使用公共函数获取 db_type
-            db_type = get_configured_db_type()
+    try:
+        async with session_factory() as session:
+            try:
+                # 使用公共函数获取 db_type
+                db_type = get_configured_db_type()
 
-            if db_type:
-                await _apply_session_settings(session, db_type)
+                if db_type:
+                    await _apply_session_settings(session, db_type)
 
-            yield session
+                yield session
 
-            # 正常退出时提交事务
-            if session.is_active:
-                await session.commit()
-        except Exception:
-            # 发生异常时回滚
-            if session.is_active:
-                await session.rollback()
-            raise
-        finally:
-            await session.close()
+                # 正常退出时提交事务
+                if session.is_active:
+                    await session.commit()
+            except Exception as e:
+                # 发生异常时回滚
+                if session.is_active:
+                    await session.rollback()
+                
+                # 转换 SQLAlchemy 异常为内部异常
+                if isinstance(e, SQLAlchemyError):
+                    raise DatabaseTransactionError(f"数据库事务执行失败: {e}") from e
+                raise
+            finally:
+                await session.close()
+    except (asyncio.TimeoutError, DatabaseConnectionError) as e:
+        logger.error(f"数据库连接超时或失败: {e}")
+        raise DatabaseConnectionError(f"无法连接到数据库: {e}") from e
+    except Exception as e:
+        if "timeout" in str(e).lower():
+             raise DatabaseConnectionError(f"数据库操作超时: {e}") from e
+        raise
 
 
 async def reset_session_factory() -> None:

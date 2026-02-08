@@ -9,6 +9,7 @@
 import asyncio
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote_plus
 
 from sqlalchemy import text
@@ -224,7 +225,7 @@ def _build_postgresql_config(
     schema: str = "public",
     echo: bool = False,
     pool_size: int = 10,
-    connection_timeout: int = 10,
+    connection_timeout: int = 30,
     ssl_mode: str = "prefer",
     ssl_ca: str = "",
     ssl_cert: str = "",
@@ -250,6 +251,11 @@ def _build_postgresql_config(
     Returns:
         (url, engine_kwargs) 元组
     """
+    # 优化 localhost 到 127.0.0.1 以避免 Windows 下 DNS 解析延迟引发的 TimeoutError
+    if host.lower() == "localhost":
+        logger.debug("将 localhost 自动重定向到 127.0.0.1 以优化解析速度")
+        host = "127.0.0.1"
+
     encoded_user = quote_plus(user)
     encoded_password = quote_plus(password)
 
@@ -259,63 +265,55 @@ def _build_postgresql_config(
         f"@{host}:{port}/{database}"
     )
 
-    # 构建 SSL 配置
-    ssl_config = {}
+    # 构建基础连接参数 (asyncpg 特定)
+    connect_args: dict[str, Any] = {
+        "timeout": connection_timeout,  # 建立连接超时
+        "command_timeout": max(60, connection_timeout * 2),  # 语句执行超时
+    }
 
     # 根据 ssl_mode 设置 SSL 参数
     if ssl_mode == "disable":
         # 禁用 SSL
-        ssl_dict: dict[str, str | bool] = {"ssl": False}
-        ssl_config = {"connect_args": ssl_dict}
+        connect_args["ssl"] = False
     elif ssl_mode == "allow":
         # 尝试 SSL，失败则降级到非 SSL
-        ssl_dict = {"ssl": "allow"}
-        ssl_config = {"connect_args": ssl_dict}
+        connect_args["ssl"] = "allow"
     elif ssl_mode == "prefer":
         # 优先 SSL（asyncpg 默认行为）
         # 不设置 ssl 参数，让 asyncpg 自动协商
         pass
     elif ssl_mode == "require":
         # 要求 SSL，但不验证证书
-        ssl_dict = {"ssl": True}
-        ssl_config = {"connect_args": ssl_dict}
+        connect_args["ssl"] = True
     elif ssl_mode == "verify-ca":
         # 验证 CA 证书
+        connect_args["ssl"] = True
         if ssl_ca:
-            ssl_dict = {"ssl": True, "sslrootcert": ssl_ca}
-            ssl_config = {"connect_args": ssl_dict}
-        else:
-            # 如果没有提供 CA 证书，降级为 require
-            ssl_dict = {"ssl": True}
-            ssl_config = {"connect_args": ssl_dict}
+            connect_args["sslrootcert"] = ssl_ca
     elif ssl_mode == "verify-full":
         # 完全验证
-        ssl_dict = {"ssl": True}
+        connect_args["ssl"] = True
         if ssl_ca:
-            ssl_dict["sslrootcert"] = ssl_ca
+            connect_args["sslrootcert"] = ssl_ca
         if ssl_cert:
-            ssl_dict["sslcert"] = ssl_cert
+            connect_args["sslcert"] = ssl_cert
         if ssl_key:
-            ssl_dict["sslkey"] = ssl_key
-        ssl_config = {"connect_args": ssl_dict}
-    else:
-        # 未知模式，使用默认行为
-        pass
-
+            connect_args["sslkey"] = ssl_key
+    
     engine_kwargs = {
         "echo": echo,
         "future": True,
         "pool_size": pool_size,
         "max_overflow": pool_size * 2,  # 溢出大小为池大小的2倍
         "pool_timeout": connection_timeout,
-        "pool_recycle": 3600,  # 1小时回收连接
+        "pool_recycle": 1800,  # 缩短回收时间以避免无效连接 (30分钟)
         "pool_pre_ping": True,  # 连接前 ping 检查
-        **ssl_config,
+        "connect_args": connect_args,
     }
 
     logger.debug(
         f"PostgreSQL 配置: {user}@{host}:{port}/{database} "
-        f"(schema: {schema}, pool: {pool_size}, ssl: {ssl_mode})"
+        f"(schema: {schema}, pool: {pool_size}, ssl: {ssl_mode}, timeout: {connection_timeout})"
     )
     return url, engine_kwargs
 
@@ -339,7 +337,7 @@ async def init_database_from_config(
     postgresql_ssl_key: str = "",
     # 连接池配置
     connection_pool_size: int = 10,
-    connection_timeout: int = 10,
+    connection_timeout: int = 30,
     # 通用配置
     echo: bool = False,
 ) -> AsyncEngine:
