@@ -85,18 +85,4 @@ poetry.lock
 /.pytest_cache/
 /test/__pycache__/
 
-logs/*
-htmlcov/
-.ruff_cache/
-old/
-data/*
-.claude/
-config/*
-plugins/*
-
-
-!plugins/default_chatter/
-
-!plugins/napcat_adapter/
-plugins/napcat_adapter/src/handlers/napcat_cache.json
-
+src\handlers\napcat_cache.json
