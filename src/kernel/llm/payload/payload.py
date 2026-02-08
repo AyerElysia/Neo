@@ -4,9 +4,9 @@ from dataclasses import dataclass
 
 from ..roles import ROLE
 from .content import Content
+from .tooling import LLMUsable
 
-
-def _normalize_content(content: Content | list[Content]) -> list[Content]:
+def _normalize_content(content: Content | LLMUsable | list[Content | LLMUsable]) -> list[Content | LLMUsable]:
     if isinstance(content, list):
         return content
     return [content]
@@ -15,8 +15,8 @@ def _normalize_content(content: Content | list[Content]) -> list[Content]:
 @dataclass(slots=True)
 class LLMPayload:
     role: ROLE
-    content: list[Content]
+    content: list[Content | LLMUsable]
 
-    def __init__(self, role: ROLE, content: Content | list[Content]):
+    def __init__(self, role: ROLE, content: Content | LLMUsable | list[Content | LLMUsable]):
         self.role = role
         self.content = _normalize_content(content)

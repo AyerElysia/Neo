@@ -24,7 +24,6 @@ from .payload import (
 	LLMPayload,
 	LLMUsable,
 	Text,
-	Tool,
 	ToolCall,
 	ToolResult,
 	ToolRegistry,
@@ -68,7 +67,6 @@ __all__ = [
 	"Image",
 	"Audio",
 	# 工具相关
-	"Tool",
 	"ToolResult",
 	"ToolCall",
 	"LLMUsable",

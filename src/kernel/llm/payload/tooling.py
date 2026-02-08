@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from .content import Content
 
 
+@runtime_checkable
 class LLMUsable(Protocol):
     @classmethod
     def to_schema(cls) -> dict[str, Any]:
@@ -21,45 +22,8 @@ class ToolCall(Content):
     name: str
     args: dict[str, Any] | str
 
-
 @dataclass(frozen=True, slots=True)
-class Tool:
-    """工具声明（用于告诉模型有哪些可调用工具）。"""
-
-    tool: type[LLMUsable]
-
-    def to_openai_tool(self) -> dict[str, Any]:
-        schema = self.tool.to_schema()
-        # 兼容两类 schema：
-        # 1) 已经是 OpenAI tools 格式：{"type":"function","function":{...}}
-        # 2) 仅 function schema：{"name":...,"description":...,"parameters":...}
-        if schema.get("type") == "function" and "function" in schema:
-            result = schema
-        else:
-            result = {"type": "function", "function": schema}
-
-        # 为所有 LLMUsable 自动注入 reason 必填参数
-        func = result.get("function", {})
-        params = func.get("parameters", {})
-        props = params.get("properties", {})
-        if "reason" not in props:
-            props["reason"] = {
-                "type": "string",
-                "description": "说明你选择此动作/工具的原因",
-            }
-            params["properties"] = props
-            required = params.get("required", [])
-            if "reason" not in required:
-                required.append("reason")
-            params["required"] = required
-            func["parameters"] = params
-            result["function"] = func
-
-        return result
-
-
-@dataclass(frozen=True, slots=True)
-class ToolResult:
+class ToolResult(Content):
     """工具执行结果。
 
     value：建议为 dict/str；若为 dict，会默认 JSON 序列化。
@@ -128,7 +92,7 @@ class ToolRegistry:
     
     def list_all(self) -> list[dict[str, Any]]:
         """获取所有已注册工具的 schema 列表。"""
-        return [Tool(tool).to_openai_tool() for tool in self._tools.values()]
+        return [tool.to_schema() for tool in self._tools.values()]
 
     def get_all_names(self) -> list[str]:
         """获取所有已注册工具的名称。"""

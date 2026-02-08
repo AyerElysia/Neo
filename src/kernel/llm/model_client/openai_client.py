@@ -8,7 +8,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from ..payload import Image, LLMPayload, Text, Tool, ToolCall, ToolResult
+from src.kernel.llm.payload.tooling import LLMUsable
+
+from ..payload import Image, LLMPayload, Text, ToolCall, ToolResult
 from ..roles import ROLE
 from .base import StreamEvent
 from src.kernel.logger import get_logger
@@ -49,9 +51,37 @@ def _payloads_to_openai_messages(
     for payload in payloads:
         if payload.role == ROLE.TOOL:
             # TOOL role 不进入 messages；只收集 tools schema
+            def to_openai_tool(tool) -> dict[str, Any]:
+                schema = tool.to_schema()
+                # 兼容两类 schema：
+                # 1) 已经是 OpenAI tools 格式：{"type":"function","function":{...}}
+                # 2) 仅 function schema：{"name":...,"description":...,"parameters":...}
+                if schema.get("type") == "function" and "function" in schema:
+                    result = schema
+                else:
+                    result = {"type": "function", "function": schema}
+
+                # 为所有 LLMUsable 自动注入 reason 必填参数
+                func = result.get("function", {})
+                params = func.get("parameters", {})
+                props = params.get("properties", {})
+                if "reason" not in props:
+                    props["reason"] = {
+                        "type": "string",
+                        "description": "说明你选择此动作/工具的原因",
+                    }
+                    params["properties"] = props
+                    required = params.get("required", [])
+                    if "reason" not in required:
+                        required.append("reason")
+                    params["required"] = required
+                    func["parameters"] = params
+                    result["function"] = func
+
+                return result
+
             for item in payload.content:
-                if isinstance(item, Tool):
-                    tools.append(item.to_openai_tool())
+                tools.append(to_openai_tool(item))
             continue
 
         if payload.role == ROLE.TOOL_RESULT:
@@ -279,7 +309,7 @@ class OpenAIChatClient:
         *,
         model_name: str,
         payloads: list[LLMPayload],
-        tools: list[Tool],
+        tools: list[LLMUsable],
         request_name: str,
         model_set: Any,
         stream: bool,

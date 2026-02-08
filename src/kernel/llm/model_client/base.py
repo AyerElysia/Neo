@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Protocol
 
-from ..payload import LLMPayload, Tool
+from ..payload import LLMPayload, LLMUsable
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +22,7 @@ class ChatModelClient(Protocol):
         *,
         model_name: str,
         payloads: list[LLMPayload],
-        tools: list[Tool],
+        tools: list[LLMUsable],
         request_name: str,
         model_set: Any,
         stream: bool,

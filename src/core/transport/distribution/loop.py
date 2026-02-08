@@ -160,7 +160,13 @@ async def run_chat_stream(
                     context.is_chatter_processing = True
                     
                     # 执行一步迭代
+                    if asyncio.iscoroutine(chatter_gene):
+                        chatter_gene = await chatter_gene
+                        manager._chatter_genes[stream_id] = chatter_gene
+
+                    logger.debug(f"[驱动器] stream={stream_id[:8]}, 准备执行 chatter_gene.__anext__()")
                     result = await chatter_gene.__anext__()
+                    logger.debug(f"[驱动器] stream={stream_id[:8]}, chatter_gene.__anext__() 返回: {type(result).__name__}")
                     
                     # 4. 根据执行结果处理状态
                     if isinstance(result, Success):

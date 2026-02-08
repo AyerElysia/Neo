@@ -15,11 +15,13 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Self
 
+from src.kernel.llm.payload.tooling import LLMUsable
+
 from .context import LLMContextManager
 from .exceptions import LLMConfigurationError, classify_exception
 from .model_client import ModelClientRegistry
 from .monitor import RequestMetrics, RequestTimer, get_global_collector
-from .payload import LLMPayload, Text, Tool, ToolResult
+from .payload import LLMPayload, Text, ToolResult
 from .policy import RoundRobinPolicy
 from .policy.base import Policy
 from .response import LLMResponse
@@ -49,13 +51,13 @@ def _normalize_tool_result_payload(payload: LLMPayload) -> LLMPayload:
     return LLMPayload(ROLE.TOOL_RESULT, out_content)  # type: ignore[arg-type]
 
 
-def _extract_tools(payloads: list[LLMPayload]) -> list[Tool]:
-    tools: list[Tool] = []
+def _extract_tools(payloads: list[LLMPayload]) -> list[LLMUsable]:
+    tools: list[LLMUsable] = []
     for payload in payloads:
         if payload.role != ROLE.TOOL:
             continue
         for part in payload.content:
-            if isinstance(part, Tool):
+            if isinstance(part, LLMUsable):
                 tools.append(part)
     return tools
 

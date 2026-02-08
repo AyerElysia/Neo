@@ -14,7 +14,6 @@ from src.kernel.llm.payload.tooling import LLMUsable
 if TYPE_CHECKING:
     from src.core.components.base.plugin import BasePlugin
 
-
 class BaseTool(ABC, LLMUsable):
     """工具组件基类。
 

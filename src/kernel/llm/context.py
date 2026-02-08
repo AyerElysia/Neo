@@ -65,31 +65,31 @@ class LLMContextManager:
         return payloads[:idx], payloads[idx:]
 
     def _build_qa_groups(self, payloads: list[LLMPayload]) -> list[list[LLMPayload]]:
+        """将消息分组。一个组作为一个不可分割的最小裁剪单位。
+        
+        分组策略：
+        1. 每一个 USER 角色开始一个新组。
+        2. 后续的 ASSISTANT 和 TOOL_RESULT 消息紧跟在该 USER 组内。
+        3. 如果在第一个 USER 之前有孤立的消息（如历史遗留），它们会各自独立成组。
+        """
         groups: list[list[LLMPayload]] = []
         current: list[LLMPayload] = []
-        prelude: list[LLMPayload] = []
 
         for payload in payloads:
+            # 遇到 USER 角色，开启新组
             if payload.role == ROLE.USER:
                 if current:
                     groups.append(current)
-                if prelude:
-                    current = prelude + [payload]
-                    prelude = []
-                else:
-                    current = [payload]
-                continue
-
-            if not current:
-                prelude.append(payload)
-                continue
-
-            current.append(payload)
+                current = [payload]
+            elif not current:
+                # 处理第一个 USER 之前的孤立消息
+                groups.append([payload])
+            else:
+                # 归入当前组（确保 user-assistant-tool_result 连带关系）
+                current.append(payload)
 
         if current:
             groups.append(current)
-        elif prelude:
-            groups.append(prelude)
 
         return groups
 
