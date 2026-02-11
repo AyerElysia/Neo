@@ -209,6 +209,7 @@ class MessageReceiver:
         # processed 非空 → 构建简化 Message 并触发 ON_MESSAGE_RECEIVED
         msg_info = envelope.get("message_info", {})
         user_info = msg_info.get("user_info") or {}
+        extra_data = msg_info.get("extra") or {}
 
         simple_message = Message(
             message_id=msg_info.get("message_id", ""),
@@ -223,6 +224,7 @@ class MessageReceiver:
             chat_type=infer_chat_type(msg_info),
             stream_id=extract_stream_id(msg_info),
             raw_data=envelope.get("raw_message"),
+            **extra_data,
         )
 
         logger.info(

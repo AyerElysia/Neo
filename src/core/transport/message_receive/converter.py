@@ -136,6 +136,9 @@ class MessageConverter:
         group_id = group_info.get("group_id") if group_info else None
         group_name = group_info.get("group_name") if group_info else None
 
+        # 提取 extra 元数据
+        extra_data = message_info.get("extra") or {}
+        
         return Message(
             message_id=message_info.get("message_id", ""),
             time=message_info.get("time", time.time()),
@@ -155,6 +158,7 @@ class MessageConverter:
             unknown_segments=result.unknown_segments,
             group_id=group_id,
             group_name=group_name,
+            **extra_data,
         )
 
     # ─── message → envelope ───────────────────
