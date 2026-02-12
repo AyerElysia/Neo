@@ -462,7 +462,7 @@ def _render_section_block(
         elif field.default is not None and field.default is not ...:
             default_text = _toml_format_value(field.default)
 
-        sig_parts = [f"允许的类型：{type_text}"]
+        sig_parts = [f"值类型：{type_text}"]
         if default_text is not None:
             sig_parts.append(f"默认值：{default_text}")
         else:
