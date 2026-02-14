@@ -16,6 +16,7 @@ from src.core.managers.stream_manager import get_stream_manager, StreamManager
 from src.core.managers.event_manager import get_event_manager, initialize_event_manager, EventManager
 from src.core.managers.router_manager import get_router_manager, initialize_router_manager, RouterManager
 from src.core.managers.tool_manager import ToolUse, get_tool_use, MCPManager, get_mcp_manager
+from src.core.managers.media_manager import get_media_manager, initialize_media_manager, MediaManager
 from src.core.transport.distribution import (
     get_stream_loop_manager,
     initialize_distribution,
@@ -36,11 +37,13 @@ __all__ = [
     "get_event_manager",
     "get_router_manager",
     "get_stream_loop_manager",
+    "get_media_manager",
     # 初始化函数
     "initialize_adapter_manager",
     "initialize_event_manager",
     "initialize_router_manager",
     "initialize_distribution",
+    "initialize_media_manager",
     # 管理器类
     "PluginManager",
     "AdapterManager",
@@ -53,6 +56,7 @@ __all__ = [
     "StreamManager",
     "EventManager",
     "RouterManager",
+    "MediaManager",
     # Tool manager
     "ToolUse",
     "get_tool_use",
