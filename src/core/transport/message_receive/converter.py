@@ -29,7 +29,7 @@ from src.kernel.logger import get_logger
 logger = get_logger("message_converter")
 
 # 递归深度硬上限
-_MAX_NESTING_DEPTH: int = 3
+_MAX_NESTING_DEPTH: int = 5
 
 
 # ──────────────────────────────────────────────
