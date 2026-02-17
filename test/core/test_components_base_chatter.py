@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from typing import Generator
+from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -22,7 +22,7 @@ class ConcreteChatter(BaseChatter):
     chatter_allow = []
     chat_type = ChatType.ALL
 
-    async def execute(self, unreads: list) -> Generator[ChatterResult, None, None]:
+    async def execute(self, unreads: list) -> AsyncGenerator[ChatterResult, None]:
         """执行聊天器逻辑。"""
         if not unreads:
             yield Failure("没有新消息")
@@ -245,7 +245,7 @@ class TestChatterAttributes:
             chat_type = ChatType.GROUP
             dependencies = ["other_plugin:service:memory"]
 
-            async def execute(self, unreads: list) -> Generator[ChatterResult, None, None]:
+            async def execute(self, unreads: list) -> AsyncGenerator[ChatterResult, None]:
                 yield Success("done")
 
         chatter = FullChatter("stream_123", mock_plugin)
@@ -263,28 +263,28 @@ class TestChatterAttributes:
             chatter_name = "chatter_private"
             chat_type = ChatType.PRIVATE
 
-            async def execute(self, unreads: list) -> Generator[ChatterResult, None, None]:
+            async def execute(self, unreads: list) -> AsyncGenerator[ChatterResult, None]:
                 yield Success("done")
 
         class GroupChatter(BaseChatter):
             chatter_name = "chatter_group"
             chat_type = ChatType.GROUP
 
-            async def execute(self, unreads: list) -> Generator[ChatterResult, None, None]:
+            async def execute(self, unreads: list) -> AsyncGenerator[ChatterResult, None]:
                 yield Success("done")
 
         class DiscussChatter(BaseChatter):
             chatter_name = "chatter_discuss"
             chat_type = ChatType.DISCUSS
 
-            async def execute(self, unreads: list) -> Generator[ChatterResult, None, None]:
+            async def execute(self, unreads: list) -> AsyncGenerator[ChatterResult, None]:
                 yield Success("done")
 
         class AllChatter(BaseChatter):
             chatter_name = "chatter_all"
             chat_type = ChatType.ALL
 
-            async def execute(self, unreads: list) -> Generator[ChatterResult, None, None]:
+            async def execute(self, unreads: list) -> AsyncGenerator[ChatterResult, None]:
                 yield Success("done")
 
         # 测试每种类型
@@ -303,7 +303,7 @@ class TestChatterExecutePatterns:
         class MultiWaitChatter(BaseChatter):
             chatter_name = "multi_wait"
 
-            async def execute(self, unreads: list) -> Generator[ChatterResult, None, None]:
+            async def execute(self, unreads: list) -> AsyncGenerator[ChatterResult, None]:
                 yield Wait(time=1.0)
                 yield Wait(time=2.0)
                 yield Wait(time=3.0)
@@ -328,7 +328,7 @@ class TestChatterExecutePatterns:
         class ImmediateSuccessChatter(BaseChatter):
             chatter_name = "immediate_success"
 
-            async def execute(self, unreads: list) -> Generator[ChatterResult, None, None]:
+            async def execute(self, unreads: list) -> AsyncGenerator[ChatterResult, None]:
                 yield Success("立即完成")
 
         chatter = ImmediateSuccessChatter("stream_123", mock_plugin)
@@ -347,7 +347,7 @@ class TestChatterExecutePatterns:
         class ImmediateFailureChatter(BaseChatter):
             chatter_name = "immediate_failure"
 
-            async def execute(self, unreads: list) -> Generator[ChatterResult, None, None]:
+            async def execute(self, unreads: list) -> AsyncGenerator[ChatterResult, None]:
                 yield Failure("立即失败")
 
         chatter = ImmediateFailureChatter("stream_123", mock_plugin)

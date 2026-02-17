@@ -17,8 +17,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import hashlib
 import time
+from pathlib import Path
 from typing import Any
 
 from src.kernel.logger import get_logger
@@ -51,6 +54,9 @@ class MediaManager:
         self._vlm_model_set = None
         self._initialize_vlm()
         self._register_prompts()
+        self._setup_media_folders()
+        self._cleanup_task_id = None
+        self._start_cleanup_scheduler()
 
     def _initialize_vlm(self) -> None:
         """初始化 VLM 模型配置。"""
@@ -92,6 +98,87 @@ class MediaManager:
         except Exception as e:
             logger.warning(f"注册提示词模板失败: {e}")
 
+    def _setup_media_folders(self) -> None:
+        """设置媒体文件夹结构。"""
+        try:
+            # 媒体根目录
+            self.media_root = Path("data/media_cache")
+            
+            # 子文件夹
+            self.pending_folder = self.media_root / "pending"  # 待识别
+            self.images_folder = self.media_root / "images"    # 识别完成的图片
+            self.emojis_folder = self.media_root / "emojis"    # 识别完成的表情包
+            
+            # 创建所有必要的文件夹
+            for folder in [self.pending_folder, self.images_folder, self.emojis_folder]:
+                folder.mkdir(parents=True, exist_ok=True)
+            
+            logger.info(f"媒体文件夹已初始化: {self.media_root}")
+        except Exception as e:
+            logger.error(f"创建媒体文件夹失败: {e}")
+
+    def _start_cleanup_scheduler(self) -> None:
+        """启动定时清理任务（每5分钟清理一次缓存）。"""
+        try:
+            # 延迟导入，避免循环依赖
+            # 确保在异步上下文中创建任务
+            asyncio.create_task(self._register_cleanup_task())
+            
+            logger.info("媒体缓存清理调度器已启动(每5分钟)")
+        except Exception as e:
+            logger.error(f"启动清理调度器失败: {e}")
+
+    async def _register_cleanup_task(self) -> None:
+        """注册定时清理任务到调度器。"""
+        try:
+            from src.kernel.scheduler import get_unified_scheduler, TriggerType
+            
+            scheduler = get_unified_scheduler()
+            
+            # 创建周期性清理任务（每5分钟 = 300秒）
+            schedule_id = await scheduler.create_schedule(
+                callback=self._cleanup_pending_folder,
+                trigger_type=TriggerType.TIME,
+                trigger_config={"delay_seconds": 300},  # 5分钟
+                is_recurring=True,
+                task_name="media_cache_cleanup"
+            )
+            
+            self._cleanup_task_id = schedule_id
+            logger.info(f"媒体缓存清理任务已注册: {schedule_id}")
+        except Exception as e:
+            logger.error(f"注册清理任务失败: {e}")
+
+    async def _cleanup_pending_folder(self) -> None:
+        """清理待识别文件夹中的陈旧文件。"""
+        try:
+            if not self.pending_folder.exists():
+                return
+            
+            current_time = time.time()
+            cleanup_count = 0
+            
+            # 遍历所有待识别文件
+            for file_path in self.pending_folder.iterdir():
+                if not file_path.is_file():
+                    continue
+                
+                # 获取文件修改时间
+                file_mtime = file_path.stat().st_mtime
+                
+                # 如果文件超过5分钟未处理，删除它
+                if current_time - file_mtime >= 300:  # 5分钟 = 300秒
+                    try:
+                        file_path.unlink()
+                        cleanup_count += 1
+                    except Exception as e:
+                        logger.warning(f"删除文件失败 {file_path.name}: {e}")
+            
+            if cleanup_count > 0:
+                logger.info(f"媒体缓存清理完成，删除了 {cleanup_count} 个陈旧文件")
+        except Exception as e:
+            logger.error(f"清理待识别文件夹失败: {e}")
+
     # ──────────────────────────────────────────
     # 公共 API：媒体识别
     # ──────────────────────────────────────────
@@ -126,6 +213,13 @@ class MediaManager:
                     logger.debug(f"从缓存获取{media_type}描述: {media_hash[:8]}...")
                     return cached_description
             
+            # 保存到待识别文件夹
+            pending_file_path = await self._save_to_pending(
+                base64_data,
+                media_hash,
+                media_type
+            )
+            
             # VLM 识别
             description = await self._recognize_with_vlm(base64_data, media_type)
             
@@ -137,6 +231,27 @@ class MediaManager:
                     description
                 )
                 logger.info(f"成功识别{media_type}: {description[:50]}...")
+                
+                # 移动到对应的分类文件夹
+                await self._move_to_category_folder(
+                    pending_file_path,
+                    media_type,
+                    media_hash
+                )
+                
+                # 保存媒体信息到数据库
+                target_folder = self.images_folder if media_type == "image" else self.emojis_folder
+                target_file_path = target_folder / pending_file_path.name
+                await self.save_media_info(
+                    media_hash=media_hash,
+                    media_type=media_type,
+                    file_path=str(target_file_path),
+                    description=description,
+                    vlm_processed=True
+                )
+            else:
+                # 识别失败，保持在待识别文件夹，等待定时清理
+                logger.warning(f"识别失败，文件保留在待识别文件夹: {pending_file_path.name}")
             
             return description
             
@@ -433,6 +548,82 @@ class MediaManager:
         
         return data
     
+    async def _save_to_pending(
+        self,
+        base64_data: str,
+        media_hash: str,
+        media_type: str
+    ) -> Path:
+        """保存媒体文件到待识别文件夹。
+        
+        Args:
+            base64_data: base64 编码的媒体数据
+            media_hash: 媒体哈希值
+            media_type: 媒体类型
+            
+        Returns:
+            保存的文件路径
+        """
+        try:
+            # 提取纯净的 base64 数据
+            clean_base64 = self._extract_clean_base64(base64_data)
+            
+            # 解码为二进制数据
+            binary_data = base64.b64decode(clean_base64)
+            
+            # 根据类型确定文件扩展名
+            ext = ".jpg" if media_type == "image" else ".png"
+            
+            # 生成文件名（哈希值前16位 + 类型标记 + 扩展名）
+            filename = f"{media_hash[:16]}_{media_type}{ext}"
+            file_path = self.pending_folder / filename
+            
+            # 写入文件
+            file_path.write_bytes(binary_data)
+            logger.debug(f"媒体已保存到待识别文件夹: {filename}")
+            
+            return file_path
+        except Exception as e:
+            logger.error(f"保存到待识别文件夹失败: {e}")
+            # 返回一个虚拟路径，不影响后续流程
+            return self.pending_folder / f"{media_hash[:16]}_error.tmp"
+
+    async def _move_to_category_folder(
+        self,
+        source_path: Path,
+        media_type: str,
+        media_hash: str
+    ) -> None:
+        """将识别完成的文件移动到对应的分类文件夹。
+        
+        Args:
+            source_path: 源文件路径（待识别文件夹中的文件）
+            media_type: 媒体类型
+            media_hash: 媒体哈希值
+        """
+        try:
+            if not source_path.exists():
+                logger.debug(f"源文件不存在，跳过移动: {source_path.name}")
+                return
+            
+            # 确定目标文件夹
+            target_folder = self.images_folder if media_type == "image" else self.emojis_folder
+            
+            # 确定目标文件名
+            target_path = target_folder / source_path.name
+            
+            # 如果目标文件已存在，删除源文件即可（去重）
+            if target_path.exists():
+                source_path.unlink()
+                logger.debug(f"目标文件已存在，删除源文件: {source_path.name}")
+                return
+            
+            # 移动文件
+            source_path.rename(target_path)
+            logger.debug(f"文件已移动到 {media_type} 文件夹: {target_path.name}")
+        except Exception as e:
+            logger.error(f"移动文件失败: {e}")
+
     @staticmethod
     def _compute_hash(data: str) -> str:
         """计算数据的 SHA256 哈希值。
