@@ -413,7 +413,7 @@ class NapcatAdapter(BaseAdapter):
                 "data": None
             }
         except Exception as e:
-            logger.error(f"执行适配器命令 '{command_name}' 时发生异常: {e}")
+            logger.error(f"执行适配器命令 '{command_name}' 时发生异常: {e}",exc_info = True)
             return {
                 "status": "error",
                 "message": f"执行命令失败: {str(e)}",

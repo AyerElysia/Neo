@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.kernel.event import get_event_bus, EventDecision
 from src.kernel.logger import get_logger
@@ -305,8 +305,8 @@ class AdapterManager:
         return None
 
     async def send_adapter_command(
-        self, adapter_sign: str, command_name: str, command_data: dict
-    ) -> dict:
+        self, adapter_sign: str, command_name: str, command_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """向指定适配器发送命令。
 
         通过适配器签名定位适配器，然后调用其 send_adapter_command 方法。
@@ -346,8 +346,9 @@ class AdapterManager:
             result = await adapter.send_adapter_command(command_name, command_data)
             return result
         except Exception as e:
-            logger.error(
-                f"向适配器 '{adapter_sign}' 发送命令 '{command_name}' 时发生异常: {e}"
+            # 记录完整 traceback 以便排查问题
+            logger.exception(
+                f"向适配器 '{adapter_sign}' 发送命令 '{command_name}' 时发生异常"
             )
             return {
                 "status": "error",
