@@ -128,7 +128,7 @@ class Bot:
             await self._optimize_async_network_runtime()
 
             # 单一总体进度条贯穿全部初始化阶段
-            with self.ui.startup_progress(total_steps=14):
+            with self.ui.startup_progress(total_steps=15):
                 # Phase 1: Kernel 初始化
                 await self._initialize_kernel()
 
@@ -137,6 +137,9 @@ class Bot:
 
                 # Phase 3: 插件发现
                 await self._discover_plugins()
+
+                # Phase 3.5: 安装插件 Python 依赖
+                await self._install_plugin_deps()
 
                 # Phase 4: 插件加载（进度条追加插件子任务）
                 self.ui.begin_plugin_loading(len(self.load_order))
@@ -459,6 +462,80 @@ class Bot:
         # 显示插件加载计划
         self.ui.display_plugin_plan(self.load_order, self.manifests)
         self.ui.update_phase_status("发现插件", f"已发现 {len(self.load_order)} 个插件")
+
+    async def _install_plugin_deps(self) -> None:
+        """Phase 3.5：批量安装所有插件声明的 Python 包依赖。
+
+        在插件发现完成、插件加载开始之前执行：
+        1. 读取全局开关 plugin_deps.enabled，若为 False 则跳过整个流程。
+        2. 收集 load_order 中每个插件的 python_dependencies，构建 PluginDepSpec 列表。
+        3. 调用 DependencyInstaller.install_for_plugins() 批量安装（去重，可选跳过已满足包）。
+        4. 对安装失败且 dependencies_required=True 的插件，将其从 load_order / manifests 中移除。
+        5. 对安装失败且 dependencies_required=False 的插件，仅记录 WARNING，保留加载队列。
+        """
+        assert self.config is not None
+
+        cfg = self.config.plugin_deps
+
+        if not cfg.enabled:
+            self.ui.update_phase_status("依赖安装", "已跳过（已禁用）")
+            return
+
+        # 构建规格列表（忽略无依赖的插件）
+        from src.core.components.utils import DependencyInstaller, PluginDepSpec
+
+        specs = [
+            PluginDepSpec(
+                plugin_name=name,
+                packages=list(self.manifests[name].python_dependencies),
+                required=self.manifests[name].dependencies_required,
+            )
+            for name in self.load_order
+            if self.manifests[name].python_dependencies
+        ]
+
+        if not specs:
+            self.ui.update_phase_status("依赖安装", "无需安装")
+            return
+
+        total_pkgs = sum(len(s.packages) for s in specs)
+        self.ui.update_phase_status("依赖安装", f"检查 {total_pkgs} 个依赖...")
+
+        installer = DependencyInstaller()
+        results = await installer.install_for_plugins(
+            specs,
+            command=cfg.install_command,
+            skip_if_satisfied=cfg.skip_if_satisfied,
+        )
+
+        # 根据结果决定是否将插件从加载队列移除
+        removed: list[str] = []
+        for plugin_name, success in results.items():
+            if not success:
+                manifest = self.manifests[plugin_name]
+                if manifest.dependencies_required:
+                    removed.append(plugin_name)
+                    if self.logger:
+                        self.logger.warning(
+                            f"插件 '{plugin_name}' 依赖安装失败且标记为必需，已从加载队列移除。"
+                        )
+                else:
+                    if self.logger:
+                        self.logger.warning(
+                            f"插件 '{plugin_name}' 依赖安装失败但标记为非必需，仍尝试加载。"
+                        )
+
+        for name in removed:
+            self.load_order.remove(name)
+            self.load_results[name] = False
+
+        status_parts: list[str] = []
+        installed_count = sum(1 for ok in results.values() if ok)
+        if installed_count:
+            status_parts.append(f"{installed_count} 个插件依赖已就绪")
+        if removed:
+            status_parts.append(f"{len(removed)} 个插件因依赖失败被移除")
+        self.ui.update_phase_status("依赖安装", "、".join(status_parts) or "完成")
 
     async def _load_plugins(self) -> dict[str, bool]:
         """加载插件"""

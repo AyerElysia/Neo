@@ -322,6 +322,28 @@ class CoreConfig(ConfigBase):
 
     advanced: AdvancedSection = Field(default_factory=AdvancedSection)
 
+    @config_section("plugin_deps")
+    class PluginDepsSection(SectionBase):
+        """插件依赖自动安装配置节
+
+        控制插件在加载前自动安装所声明的 Python 包依赖。
+        """
+
+        enabled: bool = Field(
+            default=True,
+            description="是否启用插件依赖自动安装，设为 false 则完全跳过",
+        )
+        install_command: str = Field(
+            default="uv pip install",
+            description="安装依赖时使用的命令前缀，支持 \"uv pip install\"、\"pip install\" 等",
+        )
+        skip_if_satisfied: bool = Field(
+            default=True,
+            description="仅在缺少所需包时才触发安装，避免重复安装耗时",
+        )
+
+    plugin_deps: PluginDepsSection = Field(default_factory=PluginDepsSection)
+
 # 全局配置实例（延迟初始化）
 _global_config: CoreConfig | None = None
 

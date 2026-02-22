@@ -240,6 +240,9 @@ class PluginManifest:
         include: 插件包含的组件列表及组件级依赖
         entry_point: 相对于插件根目录的 Python 入口点文件
         min_core_version: 所需的最低核心版本
+        python_dependencies: 插件所需的 Python 包列表（pip requirement 格式，如 "requests>=2.28"）
+        dependencies_required: 若为 True，Python 依赖安装失败时跳过该插件；
+            若为 False，仅发出警告，仍尝试加载
         _source_path: 内部：插件加载来源路径
     """
 
@@ -253,6 +256,8 @@ class PluginManifest:
     include: list[ComponentInclude] = field(default_factory=list)
     entry_point: str = "plugin.py"
     min_core_version: str = "1.0.0"
+    python_dependencies: list[str] = field(default_factory=list)
+    dependencies_required: bool = True
     _source_path: str = ""  # 内部：清单加载来源路径
 
 
@@ -314,6 +319,8 @@ async def load_manifest(plugin_path: str) -> PluginManifest | None:
             include=include_list,
             entry_point=manifest_data.get("entry_point", "plugin.py"),
             min_core_version=manifest_data.get("min_core_version", "3.0.0"),
+            python_dependencies=manifest_data.get("python_dependencies", []) or [],
+            dependencies_required=bool(manifest_data.get("dependencies_required", True)),
             _source_path=plugin_path,
         )
 
