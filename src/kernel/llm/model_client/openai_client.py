@@ -18,7 +18,7 @@ from src.kernel.llm.tool_call_compat import (
 
 from ..payload import Image, LLMPayload, Text, ToolCall, ToolResult
 from ..roles import ROLE
-from ..exceptions import LLMError
+from ..exceptions import LLMContentFilterError, LLMError
 from .base import StreamEvent
 
 
@@ -477,7 +477,11 @@ class OpenAIChatClient:
                 self._get_sync_http_executor(), _sync_create
             )
             if not resp.choices:
-                raise LLMError(f"OpenAI API returned an empty choices list. Response: {resp}")
+                raise LLMContentFilterError(
+                    f"模型返回空响应（可能触发了安全过滤器）。Response: {resp}",
+                    filter_type="empty_choices",
+                    model=model_name,
+                )
             msg = resp.choices[0].message
             tool_calls = []
             message_content = msg.content or ""
@@ -548,7 +552,11 @@ class OpenAIChatClient:
                             pass
                 raise
             if not resp.choices:
-                raise LLMError(f"OpenAI API returned an empty choices list. Response: {resp}")
+                raise LLMContentFilterError(
+                    f"模型返回空响应（可能触发了安全过滤器）。Response: {resp}",
+                    filter_type="empty_choices",
+                    model=model_name,
+                )
             msg = resp.choices[0].message
             tool_calls = []
             message_content = msg.content or ""
