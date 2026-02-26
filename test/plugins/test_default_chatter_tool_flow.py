@@ -155,6 +155,37 @@ async def test_process_tool_calls_deduplicates_same_send_text_content_in_one_bat
 
     assert called_ids == ["s1"]
     assert outcome.sent_once is False
+    assert outcome.has_pending_tool_results is False
+
+
+@pytest.mark.asyncio
+async def test_process_tool_calls_action_call_does_not_mark_pending() -> None:
+    """纯 action 调用后不应触发 enhanced 续轮请求。"""
+    response = _FakeResponse()
+    calls = [
+        SimpleNamespace(
+            name="action-send_text",
+            args={"content": "收到啦"},
+            id="a1",
+        )
+    ]
+
+    async def _run_tool_call(_call: Any, _resp: Any, _usable: Any, _trigger: Any) -> tuple[bool, bool]:
+        return True, True
+
+    outcome = await process_tool_calls(
+        calls=calls,
+        response=response,
+        run_tool_call=_run_tool_call,
+        usable_map={},
+        trigger_msg=SimpleNamespace(message_id="m1"),
+        pass_call_name="action-pass_and_wait",
+        stop_call_name="action-stop_conversation",
+        send_text_call_name="action-send_text",
+        break_on_send_text=False,
+    )
+
+    assert outcome.has_pending_tool_results is False
 
 
 def test_append_suspend_payload_only_for_action_calls() -> None:

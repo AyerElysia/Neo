@@ -88,7 +88,10 @@ async def process_tool_calls(
             continue
 
         appended, success = await run_tool_call(call, response, usable_map, trigger_msg)
-        if appended:
+        if appended and not call.name.startswith("action-"):
+            # 仅 tool/agent 等“有信息返回、通常需要后续推理”的调用，
+            # 才标记为需要继续发起下一轮 LLM 请求。
+            # action 调用（如 send_text）执行后通常应等待新消息，不应立即二次请求。
             outcome.has_pending_tool_results = True
 
         if (

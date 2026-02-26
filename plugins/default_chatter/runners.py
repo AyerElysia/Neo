@@ -116,12 +116,13 @@ async def run_enhanced(
         )
         has_pending_tool_results = call_outcome.has_pending_tool_results
 
-        append_suspend_payload_if_action_only(
-            calls=response.call_list or [],
-            response=response,
-            suspend_text=suspend_text,
-            logger=logger,
-        )
+        if not call_outcome.has_pending_tool_results:
+            append_suspend_payload_if_action_only(
+                calls=response.call_list or [],
+                response=response,
+                suspend_text=suspend_text,
+                logger=logger,
+            )
 
         if call_outcome.should_stop:
             logger.info(f"对话已结束，冷却 {call_outcome.stop_minutes} 分钟")
@@ -227,12 +228,13 @@ async def run_classical(
                 send_text_call_name=send_text_call_name,
                 break_on_send_text=True,
             )
-            append_suspend_payload_if_action_only(
-                calls=response.call_list or [],
-                response=response,
-                suspend_text=suspend_text,
-                logger=logger,
-            )
+            if not call_outcome.has_pending_tool_results:
+                append_suspend_payload_if_action_only(
+                    calls=response.call_list or [],
+                    response=response,
+                    suspend_text=suspend_text,
+                    logger=logger,
+                )
 
             if call_outcome.sent_once:
                 logger.info("classical 模式已发送一次消息，强制结束当前对话")
