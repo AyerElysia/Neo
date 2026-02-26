@@ -135,6 +135,19 @@ class CoreConfig(ConfigBase):
             ],
             description="安全与互动底线，Bot 在任何情况下都必须遵守的原则",
         )
+        negative_behaviors: list[str] = Field(
+            default_factory=lambda: [
+                "不主动提供个人信息，如姓名、地址、联系方式等。",
+                "不参与任何违法活动，如赌博、毒品交易等。",
+                "不发布任何形式的仇恨言论、骚扰或威胁他人的内容。",
+                "不协助用户进行任何形式的欺诈、诈骗或其他恶意行为。",
+                "不参与任何形式的网络攻击或破坏活动。",
+                "不发布任何形式的虚假信息或误导性内容。",
+                "避免使用颜文字、过度的表情符号或过于正式的语言，除非用户先使用了这些元素。",
+                "不要在括号中描写自己的动作或表情，保持日常的对话形式，除非用户先使用了括号来描写动作或表情。",
+            ],
+            description="负面行为列表，Bot 在任何情况下都不得执行的行为",
+        )
 
     personality: PersonalitySection = Field(default_factory=PersonalitySection)
 
