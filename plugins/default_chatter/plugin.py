@@ -465,12 +465,12 @@ class DefaultChatter(BaseChatter):
         response = request
         # 标记历史消息是否已并入第一个 USER payload
         history_merged = False
+        # 当前轮次的未读消息引用，供内层循环的终止路径调用 flush_unreads
+        unreads: list[Any] = []
 
+        # 外层循环：负责等待新消息、sub_agent 决策，确认有消息需要响应后进入内层
         while True:
             _, unread_msgs = await self.fetch_unreads()
-
-            # 更新 unreads 引用，用于后续 exec_llm_usable 的 trigger_msg
-            unreads = unread_msgs
 
             if unread_msgs:
                 # 使用统一格式渲染未读消息行
@@ -506,96 +506,103 @@ class DefaultChatter(BaseChatter):
                     logger.info("Sub-agent 决定不响应，继续等待...")
                     yield Wait()
                     continue
+
+                # 保存本轮未读消息，供内层终止路径调用 flush_unreads
+                unreads = unread_msgs
             else:
                 yield Wait()
                 continue
 
-            try:
-                response = await response.send(stream=False)
-                await response
-                await self.flush_unreads(unread_msgs)
-            except Exception as e:
-                logger.error(f"LLM 请求失败: {e}", exc_info=True)
-                yield Failure("LLM 请求失败", e)
-                continue
+            # ── 内层循环：多轮 LLM 对话（tool call → 结果 → 继续推理），不再重新 fetch ──
+            while True:
+                try:
+                    response = await response.send(stream=False)
+                    await response
+                except Exception as e:
+                    logger.error(f"LLM 请求失败: {e}", exc_info=True)
+                    yield Failure("LLM 请求失败", e)
+                    # 请求失败时不 flush，保留 unreads 供外层循环重试
+                    break
 
-            # LLM 没有调用任何工具 → 对话自然结束
-            if not response.call_list:
-                # 如果 LLM 返回了文本但没有调用工具，也将其作为消息发送
-                if response.message and response.message.strip():
-                    logger.warning(
-                        "LLM 返回了纯文本而非 tool call: " f"{response.message[:100]}"
-                    )
-                    yield Stop(0)  # 立即结束对话，等待下一轮新消息触发
+                # LLM 没有调用任何工具 → 对话自然结束
+                if not response.call_list:
+                    if response.message and response.message.strip():
+                        logger.warning(
+                            "LLM 返回了纯文本而非 tool call: "
+                            f"{response.message[:100]}"
+                        )
+                    await self.flush_unreads(unreads)
+                    yield Stop(0)
                     return
 
-            # ── 处理 tool calls ──
-            should_wait = False
-            should_stop = False
-            stop_minutes = 0.0
+                # ── 处理 tool calls ──
+                should_wait = False
+                should_stop = False
+                stop_minutes = 0.0
 
-            for call in response.call_list or []:
-                args = call.args if isinstance(call.args, dict) else {}
-                reason = args.pop("reason", "未提供原因")
-                logger.info(f"LLM 调用 {call.name}，原因: {reason}，参数: {args}")
+                for call in response.call_list or []:
+                    args = call.args if isinstance(call.args, dict) else {}
+                    reason = args.pop("reason", "未提供原因")
+                    logger.info(f"LLM 调用 {call.name}，原因: {reason}，参数: {args}")
 
-                if call.name == _PASS_AND_WAIT:
-                    # 特殊控制流：标记等待，不执行 action_manager
-                    response.add_payload(
-                        LLMPayload(
-                            ROLE.TOOL_RESULT,
-                            ToolResult(  # type: ignore[arg-type]
-                                value="已跳过，等待用户新消息",
-                                call_id=call.id,
-                                name=call.name,
-                            ),
+                    if call.name == _PASS_AND_WAIT:
+                        # 特殊控制流：标记等待，不执行 action_manager
+                        response.add_payload(
+                            LLMPayload(
+                                ROLE.TOOL_RESULT,
+                                ToolResult(  # type: ignore[arg-type]
+                                    value="已跳过，等待用户新消息",
+                                    call_id=call.id,
+                                    name=call.name,
+                                ),
+                            )
                         )
-                    )
-                    should_wait = True
+                        should_wait = True
 
-                elif call.name == _STOP_CONVERSATION:
-                    # 特殊控制流：结束对话并设置冷却
-                    stop_minutes = float(args.get("minutes", 5.0))
-                    response.add_payload(
-                        LLMPayload(
-                            ROLE.TOOL_RESULT,
-                            ToolResult(  # type: ignore[arg-type]
-                                value=f"对话已结束，将在 {stop_minutes} 分钟后允许新对话",
-                                call_id=call.id,
-                                name=call.name,
-                            ),
+                    elif call.name == _STOP_CONVERSATION:
+                        # 特殊控制流：结束对话并设置冷却
+                        stop_minutes = float(args.get("minutes", 5.0))
+                        response.add_payload(
+                            LLMPayload(
+                                ROLE.TOOL_RESULT,
+                                ToolResult(  # type: ignore[arg-type]
+                                    value=f"对话已结束，将在 {stop_minutes} 分钟后允许新对话",
+                                    call_id=call.id,
+                                    name=call.name,
+                                ),
+                            )
                         )
-                    )
-                    should_stop = True
+                        should_stop = True
 
-                else:
-                    # 普通 action/tool：通过 run_tool_call 执行
-                    trigger_msg = unreads[-1] if unreads else None
-                    await self.run_tool_call(call, response, usable_map, trigger_msg)
+                    else:
+                        # 普通 action/tool：通过 run_tool_call 执行
+                        trigger_msg = unreads[-1] if unreads else None
+                        await self.run_tool_call(call, response, usable_map, trigger_msg)
 
-            # ── 若本轮全部 call 均为 action 类型，注入 SUSPEND 占位符 ──
-            # action 执行后不需要 LLM 进一步响应结果，但为保持上下文规范
-            # (assistant tool_call → tool_result → assistant)，补充一个占位 assistant 消息。
-            if response.call_list and all(
-                c.name.startswith("action-") for c in response.call_list
-            ):
-                response.add_payload(LLMPayload(ROLE.ASSISTANT, Text(_SUSPEND_TEXT)))
-                logger.debug("已注入 SUSPEND 占位符（本轮全部为 action 调用）")
+                # ── 若本轮全部 call 均为 action 类型，注入 SUSPEND 占位符 ──
+                # action 执行后不需要 LLM 进一步响应结果，但为保持上下文规范
+                # (assistant tool_call → tool_result → assistant)，补充一个占位 assistant 消息。
+                if response.call_list and all(
+                    c.name.startswith("action-") for c in response.call_list
+                ):
+                    response.add_payload(LLMPayload(ROLE.ASSISTANT, Text(_SUSPEND_TEXT)))
+                    logger.debug("已注入 SUSPEND 占位符（本轮全部为 action 调用）")
 
-            # ── 处理控制流结果 ──
-            if should_stop:
-                # 设置冷却时间
-                logger.info(f"对话已结束，冷却 {stop_minutes} 分钟")
-                yield Stop(stop_minutes * 60)
-                return
+                # ── 处理控制流结果 ──
+                if should_stop:
+                    logger.info(f"对话已结束，冷却 {stop_minutes} 分钟")
+                    await self.flush_unreads(unreads)
+                    yield Stop(stop_minutes * 60)
+                    return
 
-            if should_wait:
-                # 等待新消息到来
-                yield Wait()
-                # 继续循环，让 LLM 基于更新后的上下文重新决策
+                if should_wait:
+                    # 等待新消息到来，退出内层循环回到外层 fetch
+                    await self.flush_unreads(unreads)
+                    yield Wait()
+                    break
+
+                # 没有特殊控制流（普通 tool/action 执行完毕），继续内层循环让 LLM 继续推理
                 continue
-            # 没有特殊控制流，继续让 LLM 决策（LLM 可能连续调用多轮工具）
-            continue
 
     async def _execute_classical(
         self, chat_stream: ChatStream
