@@ -510,6 +510,7 @@ class OpenAIChatClient:
         # 以下键由上层策略消费，client 侧不传给 API
         extra_params.pop("context_reserve_ratio", None)
         extra_params.pop("context_reserve_tokens", None)
+        extra_params.pop("force_sync_http", None)
 
         timeout_float = float(timeout) if isinstance(timeout, (int, float)) else None
         return api_key, base_url, timeout_float, trust_env, force_ipv4, extra_params

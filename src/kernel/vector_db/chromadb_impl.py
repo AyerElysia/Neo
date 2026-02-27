@@ -203,6 +203,10 @@ class ChromaDBImpl(VectorDBBase):
             if len(where) == 1:
                 key, value = next(iter(where.items()))
 
+                # $and / $or 已经是 ChromaDB 原生格式，直接透传
+                if key in ("$and", "$or"):
+                    return where
+
                 # 处理列表值（如 memory_types）
                 if isinstance(value, list):
                     if len(value) == 1:
