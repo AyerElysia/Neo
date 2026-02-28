@@ -391,8 +391,9 @@ async def test_response_add_payload():
     new_payload = LLMPayload(ROLE.USER, Text("second"))
     resp.add_payload(new_payload)
 
-    assert len(resp.payloads) == 2
-    assert resp.payloads[1] == new_payload
+    assert len(resp.payloads) == 1
+    assert resp.payloads[0].role == ROLE.USER
+    assert resp.payloads[0].content == [Text("first"), Text("second")]
 
 
 @pytest.mark.asyncio

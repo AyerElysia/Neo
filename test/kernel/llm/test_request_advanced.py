@@ -201,9 +201,9 @@ def test_llm_request_add_payload():
     req.add_payload(payload1)
     req.add_payload(payload2)
 
-    assert len(req.payloads) == 2
+    assert len(req.payloads) == 1
     assert req.payloads[0] == payload1
-    assert req.payloads[1] == payload2
+    assert req.payloads[0].content == [Text("first"), Text("second")]
 
 
 def test_llm_request_add_payload_with_position():
@@ -211,14 +211,14 @@ def test_llm_request_add_payload_with_position():
     req = LLMRequest([dummy_model()], request_name="test")
 
     payload1 = LLMPayload("user", [Text("first")])
-    payload2 = LLMPayload("user", [Text("second")])
+    payload2 = LLMPayload("assistant", [Text("second")])
     payload3 = LLMPayload("user", [Text("third")])
 
     req.add_payload(payload1)
     req.add_payload(payload3)
     req.add_payload(payload2, position=1)
 
-    assert len(req.payloads) == 3
+    assert len(req.payloads) == 2
     assert req.payloads[1] == payload2
 
 

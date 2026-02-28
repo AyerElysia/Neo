@@ -306,13 +306,11 @@ class DefaultChatter(BaseChatter):
         Returns:
             dict: 包含 should_respond (bool) 和 reason (str)
         """
-        history_text = self._build_enhanced_history_text(chat_stream)
         return await decide_should_respond(
             chatter=self,
             logger=logger,
             unreads_text=unreads_text,
             chat_stream=chat_stream,
-            history_text=history_text,
             fallback_prompt=sub_agent_system_prompt,
         )
 

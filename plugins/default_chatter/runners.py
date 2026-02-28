@@ -55,7 +55,7 @@ async def run_enhanced(
             history_merged = True
 
             decision = await chatter.sub_agent(
-                unread_user_prompt,
+                unread_lines,
                 unread_msgs,
                 chat_stream,
             )
@@ -166,8 +166,11 @@ async def run_classical(
             chat_stream,
             unread_msgs,
         )
+        unread_lines = "\n".join(
+            chatter.format_message_line(msg) for msg in unread_msgs
+        )
         decision = await chatter.sub_agent(
-            classical_user_text,
+            unread_lines,
             unread_msgs,
             chat_stream,
         )

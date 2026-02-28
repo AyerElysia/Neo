@@ -425,8 +425,10 @@ class TestLLMResponseAddPayload:
         result = response.add_payload(new_payload)
 
         assert result is response  # Returns self
-        assert len(response.payloads) == len(sample_payloads) + 1
-        assert response.payloads[-1] == new_payload
+        assert len(response.payloads) == len(sample_payloads)
+        assert response.payloads[-1].role == ROLE.USER
+        assert response.payloads[-1].content[0].text == "Hello!"
+        assert response.payloads[-1].content[1].text == "New message"
 
     def test_add_payload_with_position(
         self, mock_model_set: list[dict[str, Any]], sample_payloads: list[LLMPayload]

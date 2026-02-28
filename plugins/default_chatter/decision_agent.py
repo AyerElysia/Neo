@@ -10,6 +10,84 @@ from src.core.config import get_core_config
 from src.core.models.stream import ChatStream
 from src.core.prompt import get_prompt_manager
 from src.kernel.llm import LLMPayload, ROLE, Text
+from src.kernel.llm.token_counter import count_text_tokens
+
+
+def _safe_count_tokens(text: str, model_identifier: str) -> int:
+    """安全计算文本 token 数量，失败时返回 0。"""
+    try:
+        return count_text_tokens(text, model_identifier=model_identifier)
+    except Exception:
+        return 0
+
+
+def _trim_text_suffix_by_budget(
+    text: str,
+    model_identifier: str,
+    token_budget: int,
+) -> str:
+    """保留文本尾部内容并控制在 token 预算内。"""
+    if token_budget <= 0 or not text:
+        return ""
+
+    total_tokens = _safe_count_tokens(text, model_identifier)
+    if total_tokens <= token_budget:
+        return text
+
+    lines = text.splitlines()
+    kept_reversed: list[str] = []
+    used_tokens = 0
+    for line in reversed(lines):
+        line_tokens = _safe_count_tokens(line, model_identifier)
+        if kept_reversed and used_tokens + line_tokens > token_budget:
+            break
+        kept_reversed.append(line)
+        used_tokens += line_tokens
+
+    candidate = "\n".join(reversed(kept_reversed)).strip()
+    if candidate and _safe_count_tokens(candidate, model_identifier) <= token_budget:
+        return candidate
+
+    left = 0
+    right = len(text)
+    best = text[-512:]
+    while left <= right:
+        middle = (left + right) // 2
+        suffix = text[middle:]
+        token_count = _safe_count_tokens(suffix, model_identifier)
+        if token_count == 0 or token_count > token_budget:
+            left = middle + 1
+            continue
+        best = suffix
+        right = middle - 1
+
+    return best.strip()
+
+
+def _fit_unreads_to_sub_agent_budget(
+    request: Any,
+    unreads_text: str,
+) -> str:
+    """将未读消息压缩到 sub-agent 可控 token 预算内。"""
+    model_set = getattr(request, "model_set", None)
+    if not isinstance(model_set, list) or not model_set:
+        return unreads_text
+
+    first_model = model_set[0]
+    if not isinstance(first_model, dict):
+        return unreads_text
+
+    model_identifier = first_model.get("model_identifier")
+    if not isinstance(model_identifier, str) or not model_identifier:
+        return unreads_text
+
+    max_context = first_model.get("max_context")
+    if isinstance(max_context, int) and max_context > 0:
+        token_budget = min(max(1024, max_context // 4), 8000)
+    else:
+        token_budget = 6000
+
+    return _trim_text_suffix_by_budget(unreads_text, model_identifier, token_budget)
 
 
 async def decide_should_respond(
@@ -17,7 +95,6 @@ async def decide_should_respond(
     logger: Any,
     unreads_text: str,
     chat_stream: ChatStream,
-    history_text: str,
     fallback_prompt: str,
 ) -> dict[str, Any]:
     """执行子代理决策并返回 should_respond 结果。"""
@@ -35,11 +112,15 @@ async def decide_should_respond(
 
     request.add_payload(LLMPayload(ROLE.SYSTEM, Text(sub_prompt)))
 
-    if history_text:
-        request.add_payload(LLMPayload(ROLE.USER, Text(history_text)))
+    fitted_unreads = _fit_unreads_to_sub_agent_budget(request, unreads_text)
+    if len(fitted_unreads) < len(unreads_text):
+        logger.info(
+            "Sub-agent 输入已截断以控制上下文长度: "
+            f"{len(unreads_text)} -> {len(fitted_unreads)} 字符"
+        )
 
     request.add_payload(
-        LLMPayload(ROLE.USER, Text(f"【新收到待判定消息】\n{unreads_text}"))
+        LLMPayload(ROLE.USER, Text(f"【新收到待判定消息】\n{fitted_unreads}"))
     )
 
     try:

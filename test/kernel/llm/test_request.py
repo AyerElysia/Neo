@@ -161,7 +161,10 @@ class TestLLMRequest:
         assert len(request.payloads) == 1
 
         request.add_payload(payload2)
-        assert len(request.payloads) == 2
+        assert len(request.payloads) == 1
+        assert request.payloads[0].role == ROLE.USER
+        assert request.payloads[0].content[0].text == "Hello"
+        assert request.payloads[0].content[1].text == "World"
 
     def test_add_payload_at_position(
         self, mock_model_set: list[dict[str, Any]]
@@ -169,7 +172,7 @@ class TestLLMRequest:
         """Test add_payload with position parameter."""
         request = LLMRequest(mock_model_set, "test")
         payload1 = LLMPayload(ROLE.USER, Text("First"))
-        payload2 = LLMPayload(ROLE.USER, Text("Second"))
+        payload2 = LLMPayload(ROLE.ASSISTANT, Text("Second"))
         payload3 = LLMPayload(ROLE.USER, Text("Third"))
 
         request.add_payload(payload1)

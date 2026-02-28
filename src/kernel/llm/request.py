@@ -101,6 +101,10 @@ class LLMRequest:
         """
         if position is not None:
             self.payloads.insert(int(position), payload)
+            return self
+
+        if self.payloads and self.payloads[-1].role == payload.role:
+            self.payloads[-1].content.extend(payload.content)
         else:
             self.payloads.append(payload)
         return self

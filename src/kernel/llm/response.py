@@ -193,7 +193,10 @@ class LLMResponse:
         if position is not None:
             self.payloads.insert(int(position), payload)
         else:
-            self.payloads.append(payload)
+            if self.payloads and self.payloads[-1].role == payload.role:
+                self.payloads[-1].content.extend(payload.content)
+            else:
+                self.payloads.append(payload)
         self._maybe_apply_context_manager()
         return self
 
