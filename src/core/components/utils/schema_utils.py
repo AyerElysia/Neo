@@ -5,6 +5,7 @@
 """
 
 import inspect
+import types
 from typing import Any, Callable, get_args, get_origin, get_type_hints
 
 
@@ -17,6 +18,77 @@ _TYPE_MAPPING: dict[type, str] = {
     list: "array",
     dict: "object",
 }
+
+
+def _unwrap_optional_type(type_hint: Any) -> Any:
+    """解包 ``Optional[T]`` 或 ``T | None``，返回首个非 ``None`` 的类型。 
+
+    当注解不是可空联合类型时，原样返回。
+
+    Args:
+        type_hint: 待处理的类型注解。
+
+    Returns:
+        解包后的类型注解。
+    """
+    origin = get_origin(type_hint)
+    if origin not in (types.UnionType, getattr(types, "UnionType", object)):
+        # typing.Union 在 Python 3.11 下 origin 为 typing.Union（非 types.UnionType）
+        from typing import Union
+
+        if origin is not Union:
+            return type_hint
+
+    args = get_args(type_hint)
+    if not args:
+        return type_hint
+
+    non_none_args = [arg for arg in args if arg is not type(None)]
+    if non_none_args and len(non_none_args) < len(args):
+        return non_none_args[0]
+    return type_hint
+
+
+def build_type_schema(type_hint: Any) -> dict[str, Any]:
+    """将 Python 类型注解转换为 JSON Schema 片段。"""
+    annotated_origin = getattr(type_hint, "__origin__", None)
+    annotated_meta = getattr(type_hint, "__metadata__", None)
+    if annotated_origin is not None and annotated_meta is not None:
+        return build_type_schema(annotated_origin)
+
+    normalized = _unwrap_optional_type(type_hint)
+
+    if isinstance(normalized, str):
+        type_name = map_type_to_json(normalized)
+        return {"type": type_name}
+
+    if normalized is type(None):
+        return {"type": "null"}
+
+    origin = get_origin(normalized)
+    if origin in (list, set, tuple):
+        args = get_args(normalized)
+        item_type = args[0] if args else Any
+        item_schema = build_type_schema(item_type) if item_type is not Any else {"type": "string"}
+        return {
+            "type": "array",
+            "items": item_schema,
+        }
+
+    if origin is dict:
+        args = get_args(normalized)
+        value_type = args[1] if len(args) > 1 else Any
+        value_schema = (
+            build_type_schema(value_type)
+            if value_type is not Any
+            else {"type": "string"}
+        )
+        return {
+            "type": "object",
+            "additionalProperties": value_schema,
+        }
+
+    return {"type": map_type_to_json(normalized)}
 
 
 def map_type_to_json(type_hint: Any) -> str:
@@ -34,32 +106,25 @@ def map_type_to_json(type_hint: Any) -> str:
         >>> map_type_to_json(list[int])
         'array'
     """
-    # 处理 None 类型
-    if type_hint is type(None):
-        return "null"
-
     # 处理 Annotated 类型（不同 Python 版本 get_origin 行为不同）
     annotated_origin = getattr(type_hint, "__origin__", None)
     annotated_meta = getattr(type_hint, "__metadata__", None)
     if annotated_origin is not None and annotated_meta is not None:
         return map_type_to_json(annotated_origin)
 
+    # 处理 Optional/联合类型（含 PEP 604: T | None）
+    type_hint = _unwrap_optional_type(type_hint)
+
+    # 处理 None 类型
+    if type_hint is type(None):
+        return "null"
+
     origin = get_origin(type_hint)
     if origin is not None:
-        # 如果是 Union[T, None] 或 Optional[T]
-        if origin.__name__ in ("Union", "Optional"):
-            args = get_args(type_hint)
-            if args:
-                # 过滤掉 None
-                non_none_args = [arg for arg in args if arg is not type(None)]
-                if non_none_args:
-                    return map_type_to_json(non_none_args[0])
         # 如果是 list[T] 或其他泛型
-        else:
-            # 检查是否是 list、dict 等容器类型
-            for container_type in (list, dict, set, tuple):
-                if origin is container_type:
-                    return _TYPE_MAPPING.get(container_type, "object")
+        for container_type in (list, dict, set, tuple):
+            if origin is container_type:
+                return _TYPE_MAPPING.get(container_type, "object")
 
     # 处理字符串类型的类型提示（如 "int"）
     # 这里禁止使用 eval，避免执行任意代码。
@@ -80,6 +145,9 @@ def map_type_to_json(type_hint: Any) -> str:
         if resolved is None:
             return "string"
         type_hint = resolved
+
+    if type_hint is type(None):
+        return "null"
 
     # 直接类型映射
     return _TYPE_MAPPING.get(type_hint, "string")
@@ -213,15 +281,18 @@ def parse_function_signature(
         annotation = resolved_hints.get(param_name, param.annotation)
         base_type, annotated_desc = _extract_annotated_description(annotation)
 
-        param_info: dict[str, Any] = {
-            "type": map_type_to_json(base_type),
-            "description": annotated_desc
+        param_info: dict[str, Any] = build_type_schema(base_type)
+        param_info["description"] = (
+            annotated_desc
             or arg_desc.get(param_name)
-            or f"{param_name} 参数",
-        }
+            or f"{param_name} 参数"
+        )
 
         # 处理默认值
-        if param.default != inspect.Parameter.empty:
+        if (
+            param.default != inspect.Parameter.empty
+            and param.default is not None
+        ):
             param_info["default"] = param.default
 
         # 添加参数描述（可以从 docstring 解析）

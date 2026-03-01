@@ -223,6 +223,56 @@ class TestPayloadsToOpenAIMessages:
         assert messages[0]["content"] == ""
 
 
+class TestSchemaNormalization:
+    """测试 schema 归一化逻辑。"""
+
+    def test_normalize_array_and_remove_none_default(self):
+        """测试补齐 array.items 并移除 default=None。"""
+        from src.kernel.llm.model_client.openai_client import _normalize_schema_for_grammar
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "type": "array",
+                    "default": None,
+                }
+            },
+        }
+
+        _normalize_schema_for_grammar(schema)
+        tags = schema["properties"]["tags"]
+        assert "default" not in tags
+        assert tags["items"]["type"] == "string"
+
+    def test_to_openai_tool_normalizes_function_schema(self):
+        """测试 _to_openai_tool 会归一化函数参数 schema。"""
+        from src.kernel.llm.model_client.openai_client import _to_openai_tool
+
+        class MockTool:
+            @classmethod
+            def to_schema(cls):
+                return {
+                    "name": "test_tool",
+                    "description": "desc",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "tags": {
+                                "type": "array",
+                                "default": None,
+                            }
+                        },
+                    },
+                }
+
+        tool = _to_openai_tool(MockTool)
+        tags = tool["function"]["parameters"]["properties"]["tags"]
+        assert tags["type"] == "array"
+        assert tags["items"]["type"] == "string"
+        assert "default" not in tags
+
+
 class TestOpenAIChatClient:
     """测试OpenAIChatClient类。"""
 

@@ -110,16 +110,18 @@ class TestMapTypeToJson:
 
     def test_map_string_type_hint_none(self):
         """测试映射字符串类型注解 'none'。"""
-        # safe_name_map 中 "none" 映射到 type(None)
-        # 但 type(None) 不在 _TYPE_MAPPING 中，所以返回默认值 "string"
         result = map_type_to_json("none")
-        assert result == "string"
+        assert result == "null"
 
     def test_map_string_type_hint_nonetype(self):
         """测试映射字符串类型注解 'nonetype'。"""
-        # 同样，"nonetype" 也返回 "string"
         result = map_type_to_json("nonetype")
-        assert result == "string"
+        assert result == "null"
+
+    def test_map_pep604_optional(self):
+        """测试映射 PEP 604 可空联合类型。"""
+        result = map_type_to_json(list[str] | None)
+        assert result == "array"
 
     def test_map_string_type_hint_unknown(self):
         """测试映射未知字符串类型注解。"""
@@ -192,6 +194,44 @@ class TestParseFunctionSignature:
         assert schema["function"]["parameters"]["required"] == ["a"]
         assert "b" in schema["function"]["parameters"]["properties"]
         assert schema["function"]["parameters"]["properties"]["b"]["default"] == "default"
+
+    def test_parse_function_skip_none_default(self):
+        """测试默认值为 None 时不写入 default。"""
+
+        def func_with_none_default(a: list[str] | None = None):
+            """带 None 默认值。"""
+            pass
+
+        schema = parse_function_signature(func_with_none_default, "func", "描述")
+
+        a_prop = schema["function"]["parameters"]["properties"]["a"]
+        assert a_prop["type"] == "array"
+        assert a_prop["items"]["type"] == "string"
+        assert "default" not in a_prop
+
+    def test_parse_function_array_has_items(self):
+        """测试数组参数会生成 items 子 schema。"""
+
+        def func_with_array_tags(tags: list[str]):
+            """数组参数函数。"""
+            pass
+
+        schema = parse_function_signature(func_with_array_tags, "func", "描述")
+        tags_prop = schema["function"]["parameters"]["properties"]["tags"]
+        assert tags_prop["type"] == "array"
+        assert tags_prop["items"]["type"] == "string"
+
+    def test_parse_function_dict_has_additional_properties(self):
+        """测试字典参数会生成 additionalProperties。"""
+
+        def func_with_dict_meta(meta: dict[str, int]):
+            """字典参数函数。"""
+            pass
+
+        schema = parse_function_signature(func_with_dict_meta, "func", "描述")
+        meta_prop = schema["function"]["parameters"]["properties"]["meta"]
+        assert meta_prop["type"] == "object"
+        assert meta_prop["additionalProperties"]["type"] == "integer"
 
     def test_parse_function_skip_self(self):
         """测试解析时跳过 self 参数。"""

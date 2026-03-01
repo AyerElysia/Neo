@@ -16,6 +16,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Self
 
+from src.kernel.logger import get_logger
 from src.kernel.llm.payload.tooling import LLMUsable
 
 from .context import LLMContextManager
@@ -29,6 +30,9 @@ from .response import LLMResponse
 from .roles import ROLE
 from .types import ModelEntry, ModelSet, RequestType
 from .token_counter import count_payload_tokens
+
+
+logger = get_logger("kernel.llm.request", display="LLM 请求")
 
 
 def _normalize_tool_result_payload(payload: LLMPayload) -> LLMPayload:
@@ -312,6 +316,12 @@ class LLMRequest:
                 classified_error = classify_exception(e, model=model_identifier)
                 last_error = classified_error
 
+                logger.error(
+                    f"LLM 请求失败: model={model_identifier}, request={self.request_name or '__default__'}, "
+                    f"error_type={type(classified_error).__name__}, reason={classified_error}",
+                    exc_info=True,
+                )
+
                 # 记录失败指标
                 if self.enable_metrics:
                     metrics = RequestMetrics(
@@ -328,7 +338,27 @@ class LLMRequest:
                     get_global_collector().record_request(metrics)
 
                 retry_count += 1
-                step = session.next_after_error(classified_error)
+                next_step = session.next_after_error(classified_error)
+
+                if next_step.model is None:
+                    logger.error(
+                        f"LLM 请求重试已耗尽: request={self.request_name or '__default__'}, "
+                        f"retry_count={retry_count}, last_error={type(classified_error).__name__}: {classified_error}"
+                    )
+                else:
+                    next_model_identifier = next_step.model.get("model_identifier")
+                    next_model_name = (
+                        next_model_identifier
+                        if isinstance(next_model_identifier, str) and next_model_identifier
+                        else "<unknown>"
+                    )
+                    logger.warning(
+                        f"LLM 请求将进行下一步重试: request={self.request_name or '__default__'}, "
+                        f"retry_count={retry_count}, next_model={next_model_name}, "
+                        f"delay_seconds={float(next_step.delay_seconds):.2f}"
+                    )
+
+                step = next_step
 
         assert last_error is not None
         raise last_error

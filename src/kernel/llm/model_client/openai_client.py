@@ -130,6 +130,8 @@ def _to_openai_tool(tool: Any) -> dict[str, Any]:
 
     func = result.get("function", {})
     params = func.get("parameters", {})
+    if isinstance(params, dict):
+        _normalize_schema_for_grammar(params)
     props = params.get("properties", {})
     if "reason" not in props:
         props["reason"] = {
@@ -145,6 +147,42 @@ def _to_openai_tool(tool: Any) -> dict[str, Any]:
         result["function"] = func
 
     return result
+
+
+def _normalize_schema_for_grammar(schema: Any) -> None:
+    """就地归一化 JSON Schema，提升与 grammar 编译器的兼容性。"""
+    if isinstance(schema, list):
+        for item in schema:
+            _normalize_schema_for_grammar(item)
+        return
+
+    if not isinstance(schema, dict):
+        return
+
+    if schema.get("default") is None:
+        schema.pop("default", None)
+
+    if schema.get("type") == "array" and "items" not in schema:
+        schema["items"] = {"type": "string"}
+
+    if schema.get("type") == "object" and "properties" not in schema:
+        schema.setdefault("additionalProperties", {"type": "string"})
+
+    for key in (
+        "properties",
+        "items",
+        "additionalProperties",
+        "anyOf",
+        "allOf",
+        "oneOf",
+    ):
+        value = schema.get(key)
+        if isinstance(value, dict):
+            for child in value.values():
+                _normalize_schema_for_grammar(child)
+        elif isinstance(value, list):
+            for child in value:
+                _normalize_schema_for_grammar(child)
 
 
 def _payloads_to_openai_messages(
