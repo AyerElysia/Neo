@@ -536,16 +536,18 @@ class BaseChatter(ABC):
             result_text = f"未知的工具: {call.name}"
             _logger.warning(result_text)
         else:
-            # 无触发消息时跳过（保留原有行为，不追加 TOOL_RESULT）
             if trigger_msg is None:
+                # 无触发消息时无法执行，但仍需追加 TOOL_RESULT 以保证对话历史完整性，
+                # 否则 ASSISTANT 的 tool_calls 缺少对应 tool 消息会导致 API Field required 错误。
+                result_text = "无触发消息，跳过执行"
                 _logger.debug(f"[{self.chatter_name}] 无触发消息，跳过工具调用: {call.name}")
-                return False, False
-            try:
-                exec_success, result = await self.exec_llm_usable(usable_cls, trigger_msg, **args)
-                result_text = str(result) if exec_success else f"执行失败: {result}"
-            except Exception as e:
-                result_text = f"执行异常: {e}"
-                _logger.error(f"执行 {call.name} 异常: {e}", exc_info=True)
+            else:
+                try:
+                    exec_success, result = await self.exec_llm_usable(usable_cls, trigger_msg, **args)
+                    result_text = str(result) if exec_success else f"执行失败: {result}"
+                except Exception as e:
+                    result_text = f"执行异常: {e}"
+                    _logger.error(f"执行 {call.name} 异常: {e}", exc_info=True)
 
         response.add_payload(
             LLMPayload(
