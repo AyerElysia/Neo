@@ -96,7 +96,6 @@ plugins/*
 
 
 !plugins/default_chatter/
-
 !plugins/napcat_adapter/
-plugins/napcat_adapter/src/handlers/napcat_cache.json
+!plugins/booku_memory/
 
