@@ -65,6 +65,28 @@ def test_store_get_rejects_empty_name_in_names() -> None:
         store.get("actor", names=[""])
 
 
+def test_store_delete_removes_item_and_empty_bucket() -> None:
+    """delete 应删除指定 reminder，并在 bucket 为空时清理该 bucket。"""
+    store = SystemReminderStore()
+    store.set("actor", name="a", content="A")
+    store.set("actor", name="b", content="B")
+
+    assert store.delete("actor", "a") is True
+    assert store.get("actor") == "[b]\nB"
+
+    assert store.delete("actor", "b") is True
+    assert store.get("actor") == ""
+
+
+def test_store_delete_returns_false_when_missing() -> None:
+    """删除不存在的 reminder 时应返回 False。"""
+    store = SystemReminderStore()
+    store.set("actor", name="a", content="A")
+
+    assert store.delete("actor", "missing") is False
+    assert store.get("actor") == "[a]\nA"
+
+
 def test_global_store_singleton_and_reset() -> None:
     """全局 store 应可 reset（测试用途）。"""
     reset_system_reminder_store()

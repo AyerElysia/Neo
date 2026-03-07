@@ -142,6 +142,31 @@ class SystemReminderStore:
         with self._lock:
             self._data.pop(bucket_key, None)
 
+    def delete(self, bucket: BucketLike, name: str) -> bool:
+        """删除指定 bucket 下的单条 reminder。
+
+        Args:
+            bucket: reminder 所属的 bucket。
+            name: reminder 名称。
+
+        Returns:
+            bool: 删除成功返回 True；不存在时返回 False。
+        """
+
+        bucket_key = _normalize_bucket(bucket)
+        _validate_non_empty(name, "name")
+        normalized_name = name.strip()
+
+        with self._lock:
+            bucket_map = self._data.get(bucket_key)
+            if not bucket_map or normalized_name not in bucket_map:
+                return False
+
+            del bucket_map[normalized_name]
+            if not bucket_map:
+                self._data.pop(bucket_key, None)
+            return True
+
     def clear_all(self) -> None:
         """清空所有 bucket 下的所有 reminder。"""
 
