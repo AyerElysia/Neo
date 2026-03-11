@@ -8,7 +8,7 @@ model to call ``finish_task`` immediately.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -144,7 +144,7 @@ async def test_read_agent_injects_force_finish_reminder_on_last_round(monkeypatc
         lambda _task: [{"extra_params": {}}],
     )
 
-    agent = BookuMemoryReadAgent(stream_id="s", plugin=_DummyPlugin())
+    agent = BookuMemoryReadAgent(stream_id="s", plugin=cast(Any, _DummyPlugin()))
     monkeypatch.setattr(agent, "_max_reasoning_steps", lambda: 2)
 
     fake_request = _FakeRequest()
@@ -162,6 +162,42 @@ async def test_read_agent_injects_force_finish_reminder_on_last_round(monkeypatc
         opposing_tags=[],
         context="",
         include_archived=False,
+    )
+
+    assert ok is False
+    assert fake_request.saw_force_finish is True, fake_request.seen_system_texts
+
+
+@pytest.mark.asyncio
+async def test_write_agent_injects_force_finish_reminder_on_last_round(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The write agent must force-finish on the last allowed follow-up round."""
+
+    from plugins.booku_memory.agent.write_agent import BookuMemoryWriteAgent
+
+    monkeypatch.setattr(
+        "plugins.booku_memory.agent.write_agent.get_model_set_by_task",
+        lambda _task: [{"extra_params": {}}],
+    )
+
+    agent = BookuMemoryWriteAgent(stream_id="s", plugin=cast(Any, _DummyPlugin()))
+    monkeypatch.setattr(agent, "_max_reasoning_steps", lambda: 2)
+
+    fake_request = _FakeRequest()
+    monkeypatch.setattr(agent, "create_llm_request", lambda **_kwargs: fake_request)
+
+    async def _exec_local_usable(*_a: Any, **_k: Any) -> tuple[bool, Any]:
+        return True, {"ok": True}
+
+    monkeypatch.setattr(agent, "execute_local_usable", _exec_local_usable)
+
+    ok, _result = await agent.execute(
+        title="标题",
+        content="内容",
+        core_tags=["事实"],
+        diffusion_tags=["场景"],
+        opposing_tags=["无关"],
+        folder="default",
+        bucket_hint="emergent",
     )
 
     assert ok is False
