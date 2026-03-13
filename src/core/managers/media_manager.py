@@ -351,7 +351,7 @@ class MediaManager:
                 from sqlalchemy import select
                 stmt = select(Images).where(Images.image_id == media_hash)
                 result = await session.execute(stmt)
-                existing = result.scalar_one_or_none()
+                existing = result.scalars().first()
 
                 if existing:
                     # 更新现有记录
