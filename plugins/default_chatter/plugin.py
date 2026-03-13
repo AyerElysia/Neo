@@ -403,6 +403,12 @@ class DefaultChatter(BaseChatter):
         Returns:
             dict: 包含 should_respond (bool) 和 reason (str)
         """
+        if str(chat_stream.chat_type).lower() == "private":
+            return {
+                "reason": "私聊场景跳过 sub-agent，直接响应",
+                "should_respond": True,
+            }
+
         return await decide_should_respond(
             chatter=self,
             logger=logger,
