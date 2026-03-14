@@ -55,19 +55,19 @@ def _normalize_file_to_base64(
         if s.startswith("base64|"):
             return s[len("base64|"):].strip()
 
+        # 优先尝试验证是否为纯 base64 字符串
+        try:
+            cleaned = s.replace("\n", "").replace("\r", "").replace(" ", "")
+            base64.b64decode(cleaned, validate=True)
+            return cleaned
+        except Exception:
+            pass
+
         # 尝试作为文件路径处理
         path = Path(s)
         try:
             if path.exists() and path.is_file():
                 return base64.b64encode(path.read_bytes()).decode("utf-8")
-        except OSError:
-            pass
-
-        # 最后尝试验证是否为纯 base64 字符串
-        try:
-            cleaned = s.replace("\n", "").replace("\r", "").replace(" ", "")
-            base64.b64decode(cleaned, validate=True)
-            return cleaned
         except Exception:
             raise ValueError(
                 f"无法识别的 File 输入：既不是有效的文件路径，也不是合法的 base64 字符串。"
