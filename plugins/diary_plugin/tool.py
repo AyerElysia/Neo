@@ -1,7 +1,4 @@
-"""读取日记工具实现。
-
-提供读取日记的能力，用于聊天中获取今天上下文。
-"""
+"""读取日记工具实现。"""
 
 from __future__ import annotations
 
@@ -17,13 +14,7 @@ logger = get_logger("diary_plugin")
 
 
 class ReadDiaryTool(BaseTool):
-    """读取日记工具 - 聊天中获取今天上下文的核心入口。
-
-    使用场景：
-    1. 聊天开始前，读取今天日记了解已发生的事件
-    2. 用户询问"今天过得怎么样"时
-    3. 写日记之前，先读取已有内容（避免重复）
-    """
+    """读取日记工具。"""
 
     tool_name: str = "read_diary"
     tool_description: str = """
@@ -51,23 +42,12 @@ class ReadDiaryTool(BaseTool):
             "返回格式：full=完整日记，summary=事件摘要列表",
         ] = "full",
     ) -> tuple[bool, str | dict]:
-        """读取日记。
+        """读取日记。"""
 
-        Args:
-            date: 日期，支持 'today' 快捷方式
-            format: 返回格式
-
-        Returns:
-            (success, result)
-            - success=True: result 为日记内容（str 或 dict）
-            - success=False: result 为错误信息
-        """
-        # 处理日期参数
         if date is None or date == "today":
-            date = None  # service 会默认使用今天
+            date = None
             display_date = "今天"
         else:
-            # 验证日期格式
             try:
                 from datetime import datetime
 
@@ -76,12 +56,10 @@ class ReadDiaryTool(BaseTool):
             except ValueError:
                 return False, f"日期格式错误：{date}，请使用 YYYY-MM-DD 格式或 'today'"
 
-        # 获取 Service
         service = self._get_service()
         if service is None:
             return False, "diary_service 未加载"
 
-        # 读取日记
         try:
             if date is None:
                 diary_content = service.read_today()
@@ -89,45 +67,39 @@ class ReadDiaryTool(BaseTool):
                 diary_content = service.read_date(date)
 
             if format == "summary":
-                # 返回摘要格式
                 summary = service.get_today_summary()
                 return True, summary
 
-            else:
-                # 返回完整格式
-                if not diary_content.exists:
-                    return True, {
-                        "date": diary_content.date,
-                        "exists": False,
-                        "message": f"{display_date} 还没有日记，开始记录吧！",
-                        "raw_text": "",
-                        "events": [],
-                    }
-
+            if not diary_content.exists:
                 return True, {
                     "date": diary_content.date,
-                    "exists": True,
-                    "raw_text": diary_content.raw_text,
-                    "events": [
-                        {
-                            "timestamp": event.timestamp,
-                            "content": event.content,
-                            "section": event.section,
-                        }
-                        for event in diary_content.events
-                    ],
+                    "exists": False,
+                    "message": f"{display_date} 还没有日记，开始记录吧！",
+                    "raw_text": "",
+                    "events": [],
                 }
 
-        except Exception as e:
-            logger.error(f"读取日记失败：{e}")
-            return False, f"读取日记失败：{e}"
+            return True, {
+                "date": diary_content.date,
+                "exists": True,
+                "raw_text": diary_content.raw_text,
+                "events": [
+                    {
+                        "timestamp": event.timestamp,
+                        "content": event.content,
+                        "section": event.section,
+                    }
+                    for event in diary_content.events
+                ],
+            }
+
+        except Exception as exc:
+            logger.error(f"读取日记失败：{exc}")
+            return False, f"读取日记失败：{exc}"
 
     def _get_service(self) -> DiaryService | None:
-        """获取 DiaryService 实例。
+        """获取 DiaryService 实例。"""
 
-        Returns:
-            DiaryService 实例，不可用时返回 None
-        """
         from src.app.plugin_system.api.service_api import get_service
 
         service = get_service("diary_plugin:service:diary_service")

@@ -1,7 +1,7 @@
 {
   "name": "diary_plugin",
-  "version": "1.0.0",
-  "description": "日记插件 - 为模型提供写日记的能力，支持第一人称记录、日期隔离、写前必读",
+  "version": "2.0.0",
+  "description": "日记插件 - 保留按天日记能力，并新增按聊天隔离的连续记忆空间",
   "author": "MoFox Team",
   "dependencies": {
     "plugins": [],
@@ -32,6 +32,14 @@
     {
       "component_type": "event_handler",
       "component_name": "auto_diary_handler",
+      "dependencies": [
+        "diary_plugin:service:diary_service"
+      ],
+      "enabled": true
+    },
+    {
+      "component_type": "event_handler",
+      "component_name": "continuous_memory_prompt_injector",
       "dependencies": [
         "diary_plugin:service:diary_service"
       ],

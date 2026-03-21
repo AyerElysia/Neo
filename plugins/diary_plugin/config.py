@@ -1,7 +1,4 @@
-"""日记插件配置类。
-
-定义日记插件的可配置项，包括存储路径、格式选项等。
-"""
+"""日记插件配置类。"""
 
 from src.app.plugin_system.base import BaseConfig, Field, SectionBase, config_section
 
@@ -19,7 +16,7 @@ class PluginSection(SectionBase):
 
 @config_section("storage")
 class StorageSection(SectionBase):
-    """存储配置。"""
+    """日记存储配置。"""
 
     base_path: str = Field(
         default="data/diaries",
@@ -41,7 +38,7 @@ class FormatSection(SectionBase):
 
     enable_header: bool = Field(
         default=True,
-        description="是否在日记开头添加基本信息头（日期、星期、天气等）",
+        description="是否在日记开头添加基本信息头",
     )
     enable_section: bool = Field(
         default=True,
@@ -121,20 +118,66 @@ class ModelSection(SectionBase):
     )
 
 
+@config_section("continuous_memory")
+class ContinuousMemorySection(SectionBase):
+    """连续记忆配置。"""
+
+    enabled: bool = Field(
+        default=True,
+        description="是否启用按聊天隔离的连续记忆空间",
+    )
+    base_path: str = Field(
+        default="data/continuous_memories",
+        description="连续记忆存储根目录",
+    )
+    private_subdir: str = Field(
+        default="private",
+        description="私聊连续记忆子目录",
+    )
+    group_subdir: str = Field(
+        default="group",
+        description="群聊连续记忆子目录",
+    )
+    discuss_subdir: str = Field(
+        default="discuss",
+        description="讨论组连续记忆子目录",
+    )
+    batch_size: int = Field(
+        default=5,
+        description="每累计多少个自动写出的新日记项触发一次压缩",
+    )
+    max_levels: int = Field(
+        default=3,
+        description="最大连续记忆压缩层级（L1-L3）",
+    )
+    inject_prompt: bool = Field(
+        default=True,
+        description="是否将当前聊天流的连续记忆动态注入主回复 prompt",
+    )
+    include_recent_entries_in_prompt: bool = Field(
+        default=False,
+        description="是否在 prompt 中注入近期详细记忆条目；默认只注入压缩层摘要",
+    )
+    target_prompt_names: list[str] = Field(
+        default_factory=lambda: ["default_chatter_user_prompt"],
+        description="允许注入连续记忆的 prompt 模板名列表",
+    )
+    recent_entry_limit: int = Field(
+        default=5,
+        description="注入 prompt 时展示的近期详细记忆条数",
+    )
+    summary_limit_per_level: int = Field(
+        default=3,
+        description="注入 prompt 时每层展示的摘要条数上限",
+    )
+    compression_model_task: str = Field(
+        default="",
+        description="压缩连续记忆使用的任务模型名称，留空则复用 model.task_name",
+    )
+
+
 class DiaryConfig(BaseConfig):
-    """日记插件配置。
-
-    配置项说明：
-    - plugin: 插件主配置（启用状态、提示注入）
-    - storage: 存储配置（路径、格式）
-    - format: 日记格式配置（头部、时间段、时间戳）
-    - dedup: 去重配置（启用、阈值）
-    - reminder: System Reminder 配置
-    - auto_diary: 自动写日记配置（启用、阈值、提醒消息）
-    - model: 模型配置（任务模型名称）
-
-    默认配置路径：config/plugins/diary_plugin/config.toml
-    """
+    """日记插件配置。"""
 
     config_name = "config"
     config_description = "日记插件配置"
@@ -146,3 +189,6 @@ class DiaryConfig(BaseConfig):
     reminder: ReminderSection = Field(default_factory=ReminderSection)
     auto_diary: AutoDiarySection = Field(default_factory=AutoDiarySection)
     model: ModelSection = Field(default_factory=ModelSection)
+    continuous_memory: ContinuousMemorySection = Field(
+        default_factory=ContinuousMemorySection
+    )
