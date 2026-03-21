@@ -1,3 +1,0 @@
-"""
-Biometric Sleep System Source
-"""
