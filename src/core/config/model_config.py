@@ -30,6 +30,8 @@
 from threading import Lock as ThreadLock
 from typing import Any, Literal, cast
 
+from pydantic import ConfigDict
+
 from src.kernel.config import ConfigBase, SectionBase, config_section, Field
 from src.kernel.llm.types import ModelSet
 
@@ -205,6 +207,8 @@ class ModelTasksSection(SectionBase):
     包含所有预定义任务的配置。
     """
 
+    model_config = ConfigDict(extra="allow")
+
     # ========== 核心对话任务 ==========
     utils: TaskConfigSection = Field(
         default_factory=lambda: TaskConfigSection(model_list=["siliconflow-deepseek-ai/DeepSeek-V3.2"]),
@@ -240,6 +244,10 @@ class ModelTasksSection(SectionBase):
         default_factory=lambda: TaskConfigSection(model_list=["qwen3-8b"]),
         description="工具调用模型，需要使用支持工具调用的模型",
     )
+    diary: TaskConfigSection = Field(
+        default_factory=lambda: TaskConfigSection(model_list=["MiniMax-M2.5"]),
+        description="日记总结模型，供 diary_plugin 自动总结与连续记忆压缩使用",
+    )
     embedding: TaskConfigSection = Field(
         default_factory=lambda: TaskConfigSection(model_list=["bge-m3"], embedding_dimension=1024),
         description="嵌入模型配置",
@@ -262,6 +270,16 @@ class ModelTasksSection(SectionBase):
             if config is None:
                 raise ValueError(f"任务 '{task_name}' 未配置")
             return config
+        extra_tasks = getattr(self, "__pydantic_extra__", None)
+        if isinstance(extra_tasks, dict) and task_name in extra_tasks:
+            config = extra_tasks[task_name]
+            if config is None:
+                raise ValueError(f"任务 '{task_name}' 未配置")
+            if isinstance(config, TaskConfigSection):
+                return config
+            if isinstance(config, dict):
+                return TaskConfigSection.model_validate(config)
+            raise ValueError(f"任务 '{task_name}' 的配置格式不正确")
         raise ValueError(f"任务 '{task_name}' 未找到对应的配置")
 
 

@@ -745,6 +745,13 @@ def _merge_section_fields(
                 annotation
             )  # 最终兜底：按类型生成占位值
 
+    extra_mode = getattr(section_model, "model_config", None)
+    if isinstance(extra_mode, dict) and extra_mode.get("extra") == "allow":
+        for key, value in raw_section.items():
+            if key in section_model.model_fields:
+                continue
+            section_out[key] = value
+
     return section_out
 
 

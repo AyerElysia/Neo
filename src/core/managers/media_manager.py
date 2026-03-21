@@ -52,7 +52,8 @@ class MediaManager:
     def __init__(self):
         """初始化媒体管理器。"""
         self._vlm_model_set = None
-        self._skip_vlm_stream_ids: set[str] = set()  # 已注册跳过 VLM 识别的聊天流 ID
+        self._skip_vlm_stream_ids: set[str] = set()  # 已注册跳过 VLM 识别的聊天流 ID（仅图片）
+        self._skip_emoji_vlm_stream_ids: set[str] = set()  # 已注册跳过表情包 VLM 识别的聊天流 ID
         self._initialize_vlm()
         self._register_prompts()
         self._setup_media_folders()
@@ -184,7 +185,7 @@ class MediaManager:
     # 公共 API：VLM 识别控制
     # ──────────────────────────────────────────
 
-    def skip_vlm_for_stream(self, stream_id: str) -> None:
+    def skip_vlm_for_stream(self, stream_id: str, skip_emoji: bool = False) -> None:
         """注册指定聊天流跳过 VLM 识别。
 
         调用后，该 stream_id 的消息在 MessageConverter 中将不再触发
@@ -193,9 +194,12 @@ class MediaManager:
 
         Args:
             stream_id: 要跳过 VLM 识别的聊天流 ID
+            skip_emoji: 是否同时跳过表情包识别，默认 False（仅跳过图片）
         """
         self._skip_vlm_stream_ids.add(stream_id)
-        logger.debug(f"已注册跳过 VLM 识别: stream_id={stream_id[:8]}")
+        if skip_emoji:
+            self._skip_emoji_vlm_stream_ids.add(stream_id)
+        logger.debug(f"已注册跳过 VLM 识别：stream_id={stream_id[:8]}, skip_emoji={skip_emoji}")
 
     def unskip_vlm_for_stream(self, stream_id: str) -> None:
         """取消指定聊天流的 VLM 识别跳过。
@@ -204,17 +208,21 @@ class MediaManager:
             stream_id: 要恢复 VLM 识别的聊天流 ID
         """
         self._skip_vlm_stream_ids.discard(stream_id)
+        self._skip_emoji_vlm_stream_ids.discard(stream_id)
         logger.debug(f"已取消跳过 VLM 识别: stream_id={stream_id[:8]}")
 
-    def should_skip_vlm(self, stream_id: str) -> bool:
+    def should_skip_vlm(self, stream_id: str, media_type: str = "image") -> bool:
         """查询指定聊天流是否应跳过 VLM 识别。
 
         Args:
             stream_id: 聊天流 ID
+            media_type: 媒体类型，"image" 或 "emoji"
 
         Returns:
             True 表示该聊天流已注册跳过 VLM 识别
         """
+        if media_type == "emoji":
+            return stream_id in self._skip_emoji_vlm_stream_ids
         return stream_id in self._skip_vlm_stream_ids
 
     # ──────────────────────────────────────────
@@ -489,7 +497,6 @@ class MediaManager:
             # 添加 payload 并发送请求
             request.add_payload(LLMPayload(ROLE.USER, [Text(prompt), Image(image_value)]))
             response = await request.send(stream=False)
-            await response
 
             # 提取并处理描述
             description = response.message.strip() if response.message else ""

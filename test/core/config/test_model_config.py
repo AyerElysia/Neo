@@ -32,8 +32,8 @@ class TestAPIProviderSection:
         assert provider.base_url == "https://api.openai.com/v1"
         assert provider.api_key == "sk-test123"
         assert provider.client_type == "openai"
-        assert provider.max_retry == 2
-        assert provider.timeout == 10
+        assert provider.max_retry == 3
+        assert provider.timeout == 30
         assert provider.retry_interval == 10
 
     def test_provider_with_multiple_api_keys(self):
@@ -219,8 +219,10 @@ class TestModelConfig:
         """测试创建空配置。"""
         config = ModelConfig()
 
-        assert config.api_providers == []
-        assert config.models == []
+        assert len(config.api_providers) == 1
+        assert config.api_providers[0].name == "SiliconFlow"
+        assert len(config.models) == 5
+        assert config.models[0].name == "siliconflow-deepseek-ai/DeepSeek-V3.2"
         assert isinstance(config.model_tasks, ModelTasksSection)
 
     def test_create_config_with_providers(self):

@@ -577,17 +577,21 @@ class MessageConverter:
 
     async def _recognize_media_with_manager(self, result: _ParseResult) -> _ParseResult:
         """使用 MediaManager 识别媒体内容（图片、表情包）并更新文本描述。
-        
+
         Args:
             result: 解析结果
-            
+
         Returns:
             更新后的解析结果
         """
+        # 延迟导入 logger，确保在方法内部获取实例，避免模块级作用域问题
+        from src.kernel.logger import get_logger
+        logger = get_logger("message_converter")
+
         try:
             # 延迟导入避免循环依赖
             from src.core.managers.media_manager import get_media_manager
-            
+
             manager = get_media_manager()
             
             # 收集需要识别的媒体（仅图片和表情包）
