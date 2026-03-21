@@ -1,0 +1,27 @@
+# 插件基础配置。
+[plugin]
+enabled = true
+inject_prompt = true
+
+# 持久化配置。
+[storage]
+base_path = "data/unfinished_thoughts"
+max_thoughts = 20
+max_history_records = 12
+
+# 扫描配置。
+[scan]
+trigger_every_n_messages = 8
+history_window_size = 12
+
+# prompt 注入配置。
+[prompt]
+target_prompt_names = ["default_chatter_user_prompt"]
+prompt_title = "未完成念头"
+inject_min_items = 1
+inject_max_items = 3
+
+# 模型配置。
+[model]
+task_name = "diary"
+fallback_task_name = "actor"
