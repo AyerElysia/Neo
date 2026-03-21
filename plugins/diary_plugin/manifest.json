@@ -1,0 +1,45 @@
+{
+  "name": "diary_plugin",
+  "version": "1.0.0",
+  "description": "日记插件 - 为模型提供写日记的能力，支持第一人称记录、日期隔离、写前必读",
+  "author": "MoFox Team",
+  "dependencies": {
+    "plugins": [],
+    "components": []
+  },
+  "include": [
+    {
+      "component_type": "service",
+      "component_name": "diary_service",
+      "dependencies": [],
+      "enabled": true
+    },
+    {
+      "component_type": "tool",
+      "component_name": "read_diary",
+      "dependencies": [],
+      "enabled": true
+    },
+    {
+      "component_type": "action",
+      "component_name": "write_diary",
+      "dependencies": [
+        "diary_plugin:tool:read_diary",
+        "diary_plugin:service:diary_service"
+      ],
+      "enabled": true
+    },
+    {
+      "component_type": "event_handler",
+      "component_name": "auto_diary_handler",
+      "dependencies": [
+        "diary_plugin:service:diary_service"
+      ],
+      "enabled": true
+    }
+  ],
+  "entry_point": "plugin.py",
+  "min_core_version": "1.0.0",
+  "python_dependencies": [],
+  "dependencies_required": true
+}
