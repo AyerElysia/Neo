@@ -12,6 +12,12 @@ from typing import TYPE_CHECKING
 from src.kernel.logger import get_logger
 from src.kernel.scheduler import get_unified_scheduler, TriggerType
 
+from .temporal import (
+    build_chinese_datetime,
+    build_time_prompt_block,
+    classify_time_phase,
+)
+
 if TYPE_CHECKING:
     from src.core.models.stream import ChatStream
 
@@ -28,6 +34,9 @@ class StreamState:
     next_check_time: datetime | None = None  # 下次检查时间
     is_waiting: bool = False  # 是否在等待中
     scheduler_task_name: str | None = None  # 调度任务名称
+    last_proactive_message_time: datetime | None = None
+    initiative_fatigue: float = 0.0
+    proactive_message_count: int = 0
 
     def elapsed_minutes(self) -> float:
         """获取距离上次用户消息过去了多少分钟"""
@@ -41,6 +50,13 @@ class StreamState:
         self.next_check_time = None
         self.is_waiting = False
         self.scheduler_task_name = None
+        self.initiative_fatigue = max(0.0, self.initiative_fatigue - 10.0)
+
+    def mark_proactive_message(self, when: datetime | None = None) -> None:
+        """记录一次主动发言。"""
+        self.last_proactive_message_time = when or datetime.now()
+        self.proactive_message_count += 1
+        self.initiative_fatigue = min(100.0, self.initiative_fatigue + 18.0)
 
 
 class ProactiveMessageService:
@@ -103,6 +119,7 @@ class ProactiveMessageService:
         delta = datetime.now() - state.last_user_message_time
         state.accumulated_wait_minutes += delta.total_seconds() / 60.0
         state.last_user_message_time = datetime.now()
+        state.initiative_fatigue = min(100.0, state.initiative_fatigue + 5.0)
 
     def on_user_message(self, chat_stream: ChatStream, cancel_task: bool = True) -> None:
         """当收到用户消息时调用
@@ -191,6 +208,46 @@ class ProactiveMessageService:
         except Exception as e:
             logger.error(f"调度检查任务失败：{e}")
             return None
+
+    def render_time_prompt_block(
+        self,
+        stream_id: str,
+        *,
+        prompt_title: str = "时间感知",
+    ) -> str:
+        """构建动态时间感知 prompt 块。"""
+
+        state = self.get_or_create_state(stream_id)
+        now = datetime.now()
+        elapsed_user_minutes = state.elapsed_minutes()
+
+        waiting_minutes = 0.0
+        if state.next_check_time is not None:
+            waiting_delta = state.next_check_time - now
+            waiting_minutes = max(0.0, waiting_delta.total_seconds() / 60.0)
+
+        phase = classify_time_phase(
+            elapsed_user_minutes,
+            cooldown_remaining_minutes=waiting_minutes,
+        )
+
+        last_proactive_minutes = None
+        if state.last_proactive_message_time is not None:
+            last_proactive_minutes = max(
+                0.0,
+                (now - state.last_proactive_message_time).total_seconds() / 60.0,
+            )
+
+        return build_time_prompt_block(
+            current_time_text=build_chinese_datetime(now),
+            phase=phase,
+            elapsed_user_minutes=elapsed_user_minutes,
+            waiting_minutes=waiting_minutes,
+            cooldown_remaining_minutes=waiting_minutes,
+            last_proactive_minutes=last_proactive_minutes,
+            initiative_fatigue=state.initiative_fatigue,
+            prompt_title=prompt_title,
+        )
 
     async def trigger_inner_monologue(self, stream_id: str) -> None:
         """触发内心独白（由 scheduler 调用）

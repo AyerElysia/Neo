@@ -1,6 +1,6 @@
-"""Time Awareness Plugin - 时间感知插件。
+"""Time Awareness Plugin - 兼容包。
 
-为爱莉希雅提供时间感知能力，注入中式时间描述到 system reminder。
+时间感知能力已迁移到 proactive_message_plugin。
 """
 
 from .plugin import TimeAwarenessPlugin
