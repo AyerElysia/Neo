@@ -20,12 +20,10 @@ from src.core.components.loader import register_plugin
 from src.core.models.stream import ChatStream
 from src.app.plugin_system.api.log_api import get_logger
 from src.app.plugin_system.api.event_api import register_handler, publish_event
-from src.app.plugin_system.api.prompt_api import add_system_reminder
 
 from .service import ProactiveMessageService, get_proactive_message_service
 from .config import ProactiveMessageConfig
-from .inner_monologue import generate_inner_monologue
-from .tools.query_time import QueryTimeTool
+from .inner_monologue import generate_inner_monologue, extract_conversation_history
 from .tools.wait_longer import WaitLongerTool
 
 if TYPE_CHECKING:
@@ -69,10 +67,6 @@ class ProactiveMessageEventHandler(BaseEventHandler):
         if not isinstance(plugin, ProactiveMessagePlugin):
             return EventDecision.SUCCESS, params
 
-        settings = getattr(getattr(plugin, "config", None), "settings", None)
-        if not settings or not getattr(settings, "enabled", True):
-            return EventDecision.SUCCESS, params
-
         try:
             if event_name == EventType.ON_MESSAGE_RECEIVED:
                 # 收到用户消息
@@ -105,64 +99,6 @@ class ProactiveMessageEventHandler(BaseEventHandler):
         except Exception as e:
             logger.error(f"事件处理失败：{e}")
 
-        return EventDecision.SUCCESS, params
-
-
-class ProactiveTimePromptInjector(BaseEventHandler):
-    """在 prompt 构建时注入动态时间感知。"""
-
-    plugin_name = "proactive_message_plugin"
-    handler_name = "time_prompt_injector"
-    handler_description = "在目标 prompt 的 extra 板块注入动态时间感知块"
-
-    weight = 11
-    intercept_message = False
-    init_subscribe: list[EventType | str] = ["on_prompt_build"]
-
-    async def execute(
-        self,
-        event_name: str,
-        params: dict,
-    ) -> tuple:
-        from src.kernel.event import EventDecision
-
-        del event_name
-
-        plugin = self.plugin
-        if not isinstance(plugin, ProactiveMessagePlugin):
-            return EventDecision.SUCCESS, params
-
-        config = plugin.config
-        if not getattr(config.settings, "enabled", True):
-            return EventDecision.SUCCESS, params
-        if not getattr(config.settings, "inject_prompt", True):
-            return EventDecision.SUCCESS, params
-
-        prompt_name = str(params.get("name", ""))
-        target_names = list(getattr(config.settings, "target_prompt_names", []))
-        if prompt_name not in target_names:
-            return EventDecision.SUCCESS, params
-
-        values = params.get("values")
-        if not isinstance(values, dict):
-            return EventDecision.SUCCESS, params
-
-        stream_id = str(values.get("stream_id", "")).strip()
-        if not stream_id:
-            return EventDecision.SUCCESS, params
-
-        block = plugin.service.render_time_prompt_block(
-            stream_id,
-            prompt_title=str(getattr(config.settings, "time_prompt_title", "时间感知")),
-        )
-        if not block:
-            return EventDecision.SUCCESS, params
-
-        current_extra = str(values.get("extra", "") or "")
-        values["extra"] = (
-            f"{current_extra}\n\n{block}".strip() if current_extra else block
-        )
-        logger.debug(f"已向 prompt 注入时间感知: stream={stream_id[:8]}")
         return EventDecision.SUCCESS, params
 
 
@@ -206,14 +142,9 @@ class ProactiveMessagePlugin(BasePlugin):
     async def on_plugin_loaded(self) -> None:
         """插件加载时的初始化"""
         logger.info("主动发消息插件已加载")
-        settings = getattr(getattr(self, "config", None), "settings", None)
-        if not settings or not getattr(settings, "enabled", True):
-            logger.info("主动发消息插件已禁用，跳过初始化")
-            return
         # 初始化配置和服务
         _ = self.config
         _ = self.service
-        self._inject_time_philosophy_reminder()
         # 注册事件处理器
         self._register_handlers()
         logger.info("主动发消息插件初始化完成")
@@ -228,46 +159,15 @@ class ProactiveMessagePlugin(BasePlugin):
 
     def get_components(self) -> list[type]:
         """获取插件内所有组件类"""
-        settings = getattr(getattr(self, "config", None), "settings", None)
-        if not settings or not getattr(settings, "enabled", True):
-            return []
-        return [
-            QueryTimeTool,
-            WaitLongerTool,
-            ProactiveMessageEventHandler,
-            ProactiveTimePromptInjector,
-        ]
+        return [WaitLongerTool, ProactiveMessageEventHandler]
 
     def _register_handlers(self) -> None:
         """注册事件处理器"""
-        message_handler = ProactiveMessageEventHandler(self)
-        prompt_handler = ProactiveTimePromptInjector(self)
+        # 创建事件处理器实例
+        handler = ProactiveMessageEventHandler(self)
+        # 注册到事件系统
         import asyncio
-
-        asyncio.create_task(
-            register_handler(
-                "proactive_message_plugin:event_handler:on_message",
-                message_handler,
-            )
-        )
-        asyncio.create_task(
-            register_handler(
-                "proactive_message_plugin:event_handler:time_prompt_injector",
-                prompt_handler,
-            )
-        )
-
-    def _inject_time_philosophy_reminder(self) -> None:
-        """注入稳定的时间哲学 reminder。"""
-        add_system_reminder(
-            bucket="actor",
-            name="proactive_time_philosophy",
-            content=(
-                "时间不是单纯的钟表信息，而是等待、余温、牵挂和收回的流动。"
-                "不要把主动行为做成固定闹钟；每次开口前先感受当前阶段，"
-                "如果没有真正想说的话，就保持安静。"
-            ),
-        )
+        asyncio.create_task(register_handler("proactive_message_plugin:event_handler:on_message", handler))
 
     async def _on_user_message(self, chat_stream: ChatStream) -> None:
         """当收到用户消息时调用"""
@@ -368,17 +268,16 @@ class ProactiveMessagePlugin(BasePlugin):
             # 获取用户名称
             user_name = getattr(chat_stream, "stream_name", "用户")
 
-            time_context = self.service.render_time_prompt_block(
-                stream_id,
-                prompt_title="主动时间感知",
-            )
+            # 获取对话历史
+            context = getattr(chat_stream, "context", None)
+            history_messages = getattr(context, "history_messages", []) if context else []
+            conversation_history = extract_conversation_history(history_messages, limit=10)
 
             # 生成内心独白
             result = await generate_inner_monologue(
                 chat_stream=chat_stream,
                 elapsed_minutes=elapsed,
                 user_name=user_name,
-                time_context=time_context,
             )
 
             if result is None:
@@ -414,14 +313,10 @@ class ProactiveMessagePlugin(BasePlugin):
             # 发送消息
             if result.content:
                 logger.info(f"主动发消息：{stream_id[:8]}... 内容：{result.content[:50]}...")
-                success = await self._send_message(chat_stream, result.content)
-                if success:
-                    state = self.service.get_or_create_state(stream_id)
-                    state.mark_proactive_message()
-                    # 发送后不直接结束，调度“无人回复”的二次检查
-                    await self._schedule_post_send_followup(stream_id)
-                else:
-                    await self._schedule_continue_waiting(stream_id, 15)
+                await self._send_message(chat_stream, result.content)
+                # 发送后不直接结束，调度“无人回复”的二次检查
+                self.service.clear_state(stream_id, cancel_task=False)
+                await self._schedule_post_send_followup(stream_id)
             else:
                 logger.warning(f"决策发送消息但内容为空：{stream_id[:8]}...")
                 await self._schedule_continue_waiting(stream_id, 15)
@@ -459,22 +354,25 @@ class ProactiveMessagePlugin(BasePlugin):
         )
         await get_stream_manager().add_sent_message_to_history(message)
         try:
-            from plugins.default_chatter.plugin import push_runtime_assistant_injection
+            from default_chatter import plugin as default_chatter_plugin_module
 
-            push_runtime_assistant_injection(chat_stream.stream_id, history_text)
+            push_runtime_assistant_injection = getattr(
+                default_chatter_plugin_module,
+                "push_runtime_assistant_injection",
+                None,
+            )
+            if callable(push_runtime_assistant_injection):
+                push_runtime_assistant_injection(chat_stream.stream_id, history_text)
         except Exception as error:
             logger.debug(f"写入实时 assistant 注入失败：{error}")
         logger.debug(f"已注入内心独白到上下文：{chat_stream.stream_id[:8]}...")
 
-    async def _send_message(self, chat_stream: ChatStream, content: str) -> bool:
+    async def _send_message(self, chat_stream: ChatStream, content: str) -> None:
         """发送消息
 
         Args:
             chat_stream: 聊天流
             content: 消息内容
-
-        Returns:
-            bool: 是否发送成功
         """
         try:
             from src.core.transport.message_send import get_message_sender
@@ -500,14 +398,11 @@ class ProactiveMessagePlugin(BasePlugin):
             success = await sender.send_message(message)
             if success:
                 logger.info(f"主动消息发送成功：{chat_stream.stream_id[:8]}...")
-                return True
             else:
                 logger.error(f"主动消息发送失败：{chat_stream.stream_id[:8]}...")
-                return False
 
         except Exception as e:
             logger.error(f"发送主动消息失败：{e}", exc_info=True)
-            return False
 
     async def _schedule_continue_waiting(self, stream_id: str, wait_minutes: float) -> None:
         """调度继续等待
@@ -553,6 +448,10 @@ class ProactiveMessagePlugin(BasePlugin):
             await self._on_check_timeout(stream_id)
 
         wait_minutes = getattr(self.config.settings, "post_send_followup_minutes", 10.0)
+        # 发送后重置累计计时，再按 post_send_followup_minutes 重新等待
+        state = self.service.get_or_create_state(stream_id)
+        state.accumulated_wait_minutes = 0.0
+        state.last_user_message_time = datetime.now()
 
         await self.service.start_waiting(
             stream_id=stream_id,

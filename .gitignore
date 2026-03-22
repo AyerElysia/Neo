@@ -1,59 +1,105 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+# C extensions
 *.so
-.Python
-*.egg-info/
-dist/
+
+# Distribution / packaging
 build/
+dist/
+eggs/
+*.egg-info/
+.eggs/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+.pytest_cache/
+coverage/
+.coverage
+htmlcov/
 
 # Virtual environments
-.venv/
 venv/
 env/
+.venv/
 ENV/
+env.bak/
 
-# IDE
+# IDE/editor files
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-
-# Logs
-logs/
-logsllm/
-*.log
-
-# Data and storage
-data/
-data-1/
-config/
-config-1/
-
-# Media cache
-*.db
-*.db-shm
-*.db-wal
-media_cache/
-
-# Temporary files
-*.tmp
-*.bak
-*.zip
-*.7z
+*.sublime-workspace
+*.sublime-project
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# Test coverage
-.coverage
-htmlcov/
-.pytest_cache/
+# Logs and local runtime files
+*.log
+*.pid
 
-# Local development
-*.local
-.env
-.env.local
+# PyInstaller
+*.manifest
+*.spec
+
+# Local settings and secrets
+local_settings.py
+secrets.yml
+*.pem
+*.key
+
+# Data files
+*.sqlite3
+*.db
+
+# Jupyter
+.ipynb_checkpoints
+
+# Node / frontend
+node_modules/
+npm-debug.log
+
+# Coverage and reports
+reports/
+
+# Ignore compiled binaries
+*.exe
+*.dll
+*.so
+
+# Ignore temporary files
+*.tmp
+~*
+
+# Ignore build artifacts from poetry/uv if any
+.venv/
+poetry.lock
+
+# Project-specific
+/.pytest_cache/
+/test/__pycache__/
+
+logs/*
+htmlcov/
+.ruff_cache/
+old/
+data/*
+.claude/
+config/*
+plugins/*
+
+!config/plugins/
+!config/plugins/default_chatter/
+!config/plugins/default_chatter/config.toml
+
+
+!plugins/default_chatter/
+!plugins/napcat_adapter/
+!plugins/booku_memory/
+!plugins/emoji_sender/

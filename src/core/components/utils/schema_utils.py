@@ -6,7 +6,8 @@
 
 import inspect
 import types
-from typing import Any, Callable, get_args, get_origin, get_type_hints
+from enum import Enum
+from typing import Any, Callable, Literal, get_args, get_origin, get_type_hints
 
 
 # Python 类型到 JSON Schema 类型的映射
@@ -66,6 +67,17 @@ def build_type_schema(type_hint: Any) -> dict[str, Any]:
         return {"type": "null"}
 
     origin = get_origin(normalized)
+    if origin is Literal:
+        literal_values = list(get_args(normalized))
+        if not literal_values:
+            return {"type": "string"}
+        value_types = {type(value) for value in literal_values}
+        schema_type = map_type_to_json(literal_values[0]) if len(value_types) == 1 else "string"
+        return {
+            "type": schema_type,
+            "enum": literal_values,
+        }
+
     if origin in (list, set, tuple):
         args = get_args(normalized)
         item_type = args[0] if args else Any
@@ -119,7 +131,18 @@ def map_type_to_json(type_hint: Any) -> str:
     if type_hint is type(None):
         return "null"
 
+    if inspect.isclass(type_hint) and issubclass(type_hint, Enum):
+        enum_values = [member.value for member in type_hint]
+        if enum_values:
+            return map_type_to_json(enum_values[0])
+        return "string"
+
     origin = get_origin(type_hint)
+    if origin is Literal:
+        literal_values = get_args(type_hint)
+        if literal_values:
+            return map_type_to_json(literal_values[0])
+        return "string"
     if origin is not None:
         # 如果是 list[T] 或其他泛型
         for container_type in (list, dict, set, tuple):

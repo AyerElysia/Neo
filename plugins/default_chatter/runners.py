@@ -13,6 +13,7 @@ from src.kernel.logger import Logger
 from src.kernel.llm import LLMPayload, ROLE, Text
 
 from .config import DefaultChatterConfig
+from .debug import format_prompt_for_log, log_dc_result
 from .multimodal import build_multimodal_content, extract_media_from_messages
 from .type_defs import DefaultChatterRuntime, LLMConversationState, LLMResponseLike
 from .tool_flow import append_suspend_payload_if_action_only, process_tool_calls
@@ -81,6 +82,39 @@ def _get_multimodal_settings(chatter: DefaultChatterRuntime) -> tuple[bool, int]
     if isinstance(config, DefaultChatterConfig):
         return config.plugin.native_multimodal, max(0, config.plugin.max_images_per_payload)
     return False, 0
+
+
+def _log_response_debug(chatter: DefaultChatterRuntime, response: LLMConversationState) -> None:
+    """按配置输出 LLM 调试摘要。"""
+    plugin = getattr(chatter, "plugin", None)
+    config = getattr(plugin, "config", None)
+    if isinstance(config, DefaultChatterConfig):
+        log_dc_result(response, config)
+    else:
+        return
+
+
+def _log_prompt_debug(
+    chatter: DefaultChatterRuntime,
+    response: LLMConversationState,
+    logger: Logger,
+) -> None:
+    """按配置输出完整提示词上下文。"""
+    plugin = getattr(chatter, "plugin", None)
+    config = getattr(plugin, "config", None)
+    if not isinstance(config, DefaultChatterConfig):
+        return
+    plugin_cfg = getattr(config, "plugin", None)
+    debug_cfg = getattr(plugin_cfg, "debug", None)
+    if debug_cfg is None or not getattr(debug_cfg, "show_prompt", False):
+        return
+
+    prompt_text = format_prompt_for_log(response)
+    logger.print_panel(
+        prompt_text,
+        title=f"DefaultChatter 提示词 (stream={getattr(chatter, 'stream_id', '')[:8]})",
+        border_style="cyan",
+    )
 
 
 def _build_multimodal_payload(
@@ -229,8 +263,10 @@ async def run_enhanced(
         if rt.phase in (_ToolCallWorkflowPhase.MODEL_TURN, _ToolCallWorkflowPhase.FOLLOW_UP):
             # FOLLOW_UP 阶段严禁 flush 新未读；MODEL_TURN 才 flush 本轮采纳的 unread。
             try:
+                _log_prompt_debug(chatter, rt.response, logger)
                 rt.response = await rt.response.send(stream=False)
                 await rt.response
+                _log_response_debug(chatter, rt.response)
                 if rt.phase == _ToolCallWorkflowPhase.MODEL_TURN:
                     if rt.unread_msgs_to_flush:
                         await chatter.flush_unreads(rt.unread_msgs_to_flush)
@@ -381,8 +417,10 @@ async def run_classical(
 
         while True:
             try:
+                _log_prompt_debug(chatter, response, logger)
                 response = await response.send(stream=False)
                 await response
+                _log_response_debug(chatter, response)
             except Exception as error:
                 logger.error(f"LLM 请求失败: {error}", exc_info=True)
                 yield Failure("LLM 请求失败", error)

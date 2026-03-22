@@ -10,7 +10,7 @@
 - 我还没有解释清楚的张力
 - 我需要保持的稳定边界
 
-这套状态可以每日自动更新，也可以手动触发更新，并在需要时注入到主回复 prompt 中。
+这套状态可以每日自动更新，也可以手动触发更新，并在需要时注入到主回复的 system prompt 尾部补充区中。
 
 ---
 
@@ -41,7 +41,7 @@
 
 ### 4. Prompt 注入
 
-- 可以把当前聊天流的自我叙事摘要注入到目标 prompt。
+- 可以把当前聊天流的自我叙事摘要注入到目标 system prompt。
 - 支持控制是否显示稳定边界。
 - 支持控制是否显示近期演化历史。
 
@@ -101,7 +101,7 @@ self_narrative_plugin/
 
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
-| `target_prompt_names` | `["default_chatter_user_prompt"]` | 允许注入自我叙事的 prompt 模板名 |
+| `target_prompt_names` | `["default_chatter_system_prompt"]` | 允许注入自我叙事的 prompt 模板名 |
 | `prompt_title` | `"自我叙事"` | prompt 中显示的标题 |
 | `max_history_lines` | `3` | prompt 中显示的历史记录条数 |
 
@@ -183,11 +183,11 @@ self_narrative_plugin/
 
 ## Prompt 注入
 
-当 `plugin.inject_prompt = true` 时，插件会在 `on_prompt_build` 阶段把自我叙事块注入到目标 prompt 中。
+当 `plugin.inject_prompt = true` 时，插件会在 `on_prompt_build` 阶段把自我叙事块注入到目标 system prompt 中。
 
 默认目标模板是：
 
-- `default_chatter_user_prompt`
+- `default_chatter_system_prompt`
 
 注入内容一般包括：
 
@@ -196,6 +196,8 @@ self_narrative_plugin/
 - 尚未解释完的问题
 - 稳定边界
 - 可选的近期演化历史
+
+实际注入位置是 system prompt 末尾的补充区，而不是 history 或 user prompt 的 extra 区块。
 
 这能帮助主回复模型在长对话中保持更稳定的自我连续性，而不是每轮都像重新开始。
 
@@ -272,4 +274,3 @@ data/self_narratives/discuss/<stream_id>.json
 - 命令：`plugins/self_narrative_plugin/commands/self_narrative_command.py`
 - 启动事件：`plugins/self_narrative_plugin/components/events/startup_event.py`
 - Prompt 注入：`plugins/self_narrative_plugin/components/events/prompt_injector.py`
-

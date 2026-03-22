@@ -311,6 +311,7 @@ class TestWatchDog:
         assert isinstance(heartbeat, StreamHeartbeat)
         assert heartbeat.stream_id == "test_stream"
         assert heartbeat.tick_interval == 0.1
+        assert heartbeat.restart_cooldown == 0.1
 
         # 清理
         wd.unregister_stream("test_stream")
@@ -1049,6 +1050,32 @@ class TestWatchDogStreamMonitoring:
         time.sleep(0.01)
 
         wd.stop()
+
+    def test_watchdog_stream_restart_cooldown_suppresses_duplicate_requests(self) -> None:
+        """同一流在重启冷却内不应重复提交重启请求。"""
+        wd = WatchDog(tick_interval=0.05)
+
+        restart_called = []
+
+        def restart_callback() -> None:
+            restart_called.append(True)
+
+        heartbeat = wd.register_stream(
+            stream_id="restart_cooldown_stream",
+            tick_interval=1.0,
+            restart_threshold=2.0,
+            restart_callback=restart_callback,
+            restart_cooldown=10.0,
+        )
+
+        from datetime import timedelta
+
+        heartbeat.last_tick = datetime.now() - timedelta(seconds=5.0)
+
+        wd._check_streams()
+        wd._check_streams()
+
+        assert len(restart_called) == 1
 
     def test_watchdog_restart_callback_exception(self) -> None:
         """测试重启回调异常处理"""

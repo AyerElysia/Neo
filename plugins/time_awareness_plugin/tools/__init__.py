@@ -1,4 +1,4 @@
-"""Time Awareness Plugin tools (compatibility only)."""
+"""Time Awareness Plugin tools."""
 
 from .query_time import QueryTimeTool
 

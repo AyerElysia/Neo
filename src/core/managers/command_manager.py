@@ -7,7 +7,6 @@ Command 组件使用 Trie 树进行命令匹配，支持多级命令和参数解
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from src.kernel.logger import get_logger
@@ -21,8 +20,6 @@ if TYPE_CHECKING:
 
 
 logger = get_logger("command_manager")
-
-_LEADING_AT_PATTERN = re.compile(r"^(?:@<[^>]+>\s*)+")
 
 
 class CommandManager:
@@ -119,7 +116,7 @@ class CommandManager:
         if not text:
             return False
 
-        stripped = self._normalize_command_text(text)
+        stripped = text.strip()
         return any(stripped.startswith(prefix) for prefix in self._command_prefixes)
 
     def match_command(
@@ -142,7 +139,7 @@ class CommandManager:
         if not self.is_command(text):
             return "", None, []
 
-        stripped = self._normalize_command_text(text)
+        stripped = text.strip()
 
         # 移除命令前缀
         for prefix in self._command_prefixes:
@@ -257,7 +254,7 @@ class CommandManager:
         Returns:
             str: 去掉前缀和 command_path 后的子路由文本
         """
-        stripped = self._normalize_command_text(text)
+        stripped = text.strip()
 
         for prefix in self._command_prefixes:
             if stripped.startswith(prefix):
@@ -273,16 +270,6 @@ class CommandManager:
         if stripped.startswith(f"{command_path} "):
             return stripped[len(command_path) :].strip()
 
-        return stripped
-
-    def _normalize_command_text(self, text: str) -> str:
-        """归一化命令文本。
-
-        允许消息前方带有一个或多个 @ 提及片段，例如：
-        ``@<爱莉希雅:3427056465> /tts 你好``。
-        """
-        stripped = text.strip()
-        stripped = _LEADING_AT_PATTERN.sub("", stripped).strip()
         return stripped
 
     def get_command_help(self, signature: str) -> str:

@@ -95,3 +95,13 @@ group = """
 - 如果@的是“真我的爱莉希雅”，那是我的妹妹，我会微笑着看她互动。
 - 如果没有@直接叫“爱莉”，那才是在呼唤我哦♪。
 """
+
+# 调试输出相关配置。
+[plugin.debug]
+# 是否输出发送给 LLM 的完整提示词
+# 值类型：bool, 默认值：false
+show_prompt = true
+
+# 是否输出 LLM 响应调试摘要
+# 值类型：bool, 默认值：false
+show_response = true

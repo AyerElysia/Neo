@@ -64,6 +64,7 @@ async def test_start_stream_loop_registers_watchdog_with_multiplier_thresholds(m
     assert registered_kwargs["tick_interval"] == 30.0
     assert registered_kwargs["warning_threshold"] == 2.0
     assert registered_kwargs["restart_threshold"] == 5.0
+    assert registered_kwargs["restart_cooldown"] == 30.0
     assert callable(registered_kwargs["restart_callback"])
 
     task = context.stream_loop_task

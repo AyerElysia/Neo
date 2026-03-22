@@ -56,21 +56,6 @@ class ProactiveMessageConfig(BaseConfig):
             description="内心独白提示中携带的历史独白条数",
         )
 
-        inject_prompt: bool = Field(
-            default=True,
-            description="是否在 on_prompt_build 阶段注入动态时间感知块。",
-        )
-
-        target_prompt_names: list[str] = Field(
-            default=["default_chatter_user_prompt"],
-            description="需要注入动态时间感知块的 prompt 名称列表。",
-        )
-
-        time_prompt_title: str = Field(
-            default="时间感知",
-            description="动态时间感知块的标题。",
-        )
-
         # 忽略的聊天类型
         ignored_chat_types: list[str] = Field(
             default=["group"],

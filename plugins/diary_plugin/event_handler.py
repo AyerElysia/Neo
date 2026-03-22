@@ -321,7 +321,7 @@ class ContinuousMemoryPromptInjector(BaseEventHandler):
     """在 prompt 构建时注入连续记忆。"""
 
     handler_name: str = "continuous_memory_prompt_injector"
-    handler_description: str = "在目标 prompt 的 extra 板块中注入当前聊天流连续记忆"
+    handler_description: str = "在目标 system prompt 的连续记忆区块中注入当前聊天流连续记忆"
     weight: int = 10
     init_subscribe: list[str] = ["on_prompt_build"]
 
@@ -356,14 +356,14 @@ class ContinuousMemoryPromptInjector(BaseEventHandler):
         if service is None:
             return EventDecision.SUCCESS, params
 
-        memory_block = service.render_continuous_memory_for_prompt(stream_id)
+        memory_block = service.render_continuous_memory_for_prompt(
+            stream_id,
+            values.get("chat_type"),
+        )
         if not memory_block:
             return EventDecision.SUCCESS, params
 
-        current_extra = str(values.get("extra", "") or "")
-        values["extra"] = (
-            f"{current_extra}\n\n{memory_block}".strip() if current_extra else memory_block
-        )
+        values["continuous_memory"] = memory_block
 
         return EventDecision.SUCCESS, params
 

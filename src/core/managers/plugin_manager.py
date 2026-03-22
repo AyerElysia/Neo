@@ -8,12 +8,10 @@ src.core.components.loader.PluginLoader 负责。
 
 from __future__ import annotations
 
-import importlib
 import importlib.util
 import inspect
 import shutil
 import sys
-import types
 import tempfile
 import zipfile
 from pathlib import Path
@@ -476,14 +474,6 @@ class PluginManager:
                     logger.error(f"无法创建模块规范: {entry_point}")
                     return None
 
-                package_module = sys.modules.get(package_name)
-                if package_module is None:
-                    package_module = types.ModuleType(package_name)
-                    package_module.__path__ = [str(plugin_root)]
-                    package_module.__package__ = package_name
-                    package_module.__file__ = str(plugin_root / "__init__.py")
-                    sys.modules[package_name] = package_module
-
                 module = importlib.util.module_from_spec(spec)
 
                 # 设置 __package__ 以支持相对导入
@@ -562,14 +552,6 @@ class PluginManager:
                 if spec is None or spec.loader is None:
                     logger.error(f"无法创建模块规范: {entry_point}")
                     return None
-
-                package_module = sys.modules.get(package_name)
-                if package_module is None:
-                    package_module = types.ModuleType(package_name)
-                    package_module.__path__ = [str(folder)]
-                    package_module.__package__ = package_name
-                    package_module.__file__ = str(folder / "__init__.py")
-                    sys.modules[package_name] = package_module
 
                 module = importlib.util.module_from_spec(spec)
 

@@ -40,6 +40,27 @@ class DefaultChatterConfig(BaseConfig):
                 order=1
             )
 
+        @config_section("debug", title="调试设置", tag="debug", order=20)
+        class DebugSection(SectionBase):
+            """调试输出相关配置。"""
+
+            show_prompt: bool = Field(
+                default=False,
+                description="是否输出发送给 LLM 的完整提示词",
+                label="显示完整上下文",
+                tag="debug",
+                hint="开启后会打印系统提示词、历史消息、未读消息和工具列表",
+                order=0
+            )
+            show_response: bool = Field(
+                default=False,
+                description="是否输出 LLM 响应调试摘要",
+                label="显示响应摘要",
+                tag="debug",
+                hint="开启后会打印模型返回的工具调用和文本摘要",
+                order=0
+            )
+
         enabled: bool = Field(
             default=True,
             description="是否启用 DefaultChatter",
@@ -93,6 +114,12 @@ class DefaultChatterConfig(BaseConfig):
             description="按聊天类型区分的额外提示词",
             label="场景引导配置",
             order=5
+        )
+        debug: DebugSection = Field(
+            default_factory=DebugSection,
+            description="调试输出配置",
+            label="调试配置",
+            order=6
         )
 
     plugin: PluginSection = Field(default_factory=PluginSection)

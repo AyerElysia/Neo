@@ -177,7 +177,8 @@ class StreamLoopManager:
                 tick_interval = get_core_config().bot.tick_interval
                 warning_threshold = get_core_config().bot.stream_warning_threshold
                 restart_threshold = get_core_config().bot.stream_restart_threshold
-                restart_cooldown = max(tick_interval, tick_interval * restart_threshold)
+                # 重启冷却不应与“卡死判定阈值”同量级，否则首次失败后会长时间无法再次有效重试。
+                restart_cooldown = max(tick_interval, min(30.0, tick_interval * 2.0))
 
                 loop_task = get_task_manager().create_task(
                     run_chat_stream(stream_id, self),
@@ -219,6 +220,7 @@ class StreamLoopManager:
                     warning_threshold=warning_threshold,
                     restart_threshold=restart_threshold,
                     restart_callback=_restart_stream_in_loop,
+                    restart_cooldown=restart_cooldown,
                 )
                 
                 self._stats["active_streams"] += 1

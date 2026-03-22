@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from src.app.plugin_system.api import llm_api
-from src.app.plugin_system.api.prompt_api import get_system_reminder
 from src.core.components.base.chatter import BaseChatter
 from src.core.components.types import ChatType
 from src.core.config import get_core_config
@@ -17,14 +16,10 @@ from src.core.managers import get_plugin_manager
 from src.kernel.logger import get_logger
 from src.kernel.llm import LLMPayload, ROLE, Text
 
-from plugins.default_chatter.plugin import SendTextAction
-from plugins.default_chatter.prompt_builder import DefaultChatterPromptBuilder
-try:
-    from plugins.emoji_sender.action import SendEmojiMemeAction
-except Exception:  # noqa: BLE001
-    SendEmojiMemeAction = None
-from plugins.thinking_plugin.tools.think_tool import ThinkTool
+from default_chatter.prompt_builder import DefaultChatterPromptBuilder
+from thinking_plugin.tools.think_tool import ThinkTool
 from .tools.wait_longer import WaitLongerTool
+from default_chatter.plugin import SendTextAction
 
 if TYPE_CHECKING:
     from src.core.models.stream import ChatStream
@@ -56,8 +51,6 @@ INNER_MONOLOGUE_PROMPT = """# 关于你
 你上次收到 {user_name} 的消息已经是{elapsed_minutes:.0f}分钟了。
 他一直没有回复你。
 
-{time_context}
-
 你记得你们之前的对话：
 {conversation_history}
 
@@ -72,7 +65,6 @@ INNER_MONOLOGUE_PROMPT = """# 关于你
 
 你必须二选一，并且必须调用工具，不允许只输出纯文本：
 - 如果想主动发一条消息，调用 send_text
-- 如果觉得表情包更适合当前情绪，可以额外调用 send_emoji_meme
 - 如果觉得还想再等等，先调用think工具作为你的内心独白，然后调用 wait_longer，并给出 wait_minutes 和 thought
 
 如果你没有调用工具，这次回答会被视为无效。
@@ -84,7 +76,6 @@ async def generate_inner_monologue(
     chat_stream: "ChatStream",
     elapsed_minutes: float,
     user_name: str,
-    time_context: str = "",
     model_set: str = "actor",
 ) -> InnerMonologueResult | None:
     """生成内心独白并获取决策。
@@ -138,9 +129,6 @@ async def generate_inner_monologue(
         limit=monologue_limit,
     )
     monologue_section = format_monologue_section(monologue_history)
-    time_context = time_context.strip()
-    if not time_context:
-        time_context = "（暂时没有额外的时间感知信息）"
 
     prompt_text = INNER_MONOLOGUE_PROMPT.format(
         nickname=nickname,
@@ -150,7 +138,6 @@ async def generate_inner_monologue(
         theme_guide=theme_guide,
         user_name=user_name,
         elapsed_minutes=elapsed_minutes,
-        time_context=time_context,
         conversation_history=conversation_history or "（没有历史对话）",
         monologue_history_section=monologue_section,
     )
@@ -176,12 +163,6 @@ async def generate_inner_monologue(
             default_chatter_config,
             chat_stream,
         )
-        time_reminder = get_system_reminder(
-            "actor",
-            names=["proactive_time_philosophy"],
-        )
-        if time_reminder:
-            system_prompt = f"{system_prompt}\n\n{time_reminder}".strip()
         history_text = DefaultChatterPromptBuilder.build_enhanced_history_text(
             chat_stream,
             BaseChatter.format_message_line,
@@ -196,10 +177,7 @@ async def generate_inner_monologue(
         if system_prompt:
             llm_request.add_payload(LLMPayload(ROLE.SYSTEM, [Text(system_prompt)]))
 
-        tool_classes = [ThinkTool, SendTextAction, WaitLongerTool]
-        if SendEmojiMemeAction is not None:
-            tool_classes.append(SendEmojiMemeAction)
-        tool_registry = llm_api.create_tool_registry(tool_classes)
+        tool_registry = llm_api.create_tool_registry([ThinkTool, SendTextAction, WaitLongerTool])
         llm_request.add_payload(LLMPayload(ROLE.TOOL, tool_registry.get_all()))
         llm_request.add_payload(LLMPayload(ROLE.USER, [Text(user_prompt)]))
 

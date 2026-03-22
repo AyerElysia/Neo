@@ -194,18 +194,6 @@ async def run_chat_stream(
                     
                     # 执行一步迭代
                     result = await anext(chatter_gene)
-
-                    await event_manager.publish_event(
-                        EventType.ON_CHATTER_STEP,
-                        {
-                            "stream_id": stream_id,
-                            "context": context,
-                            "tick": tick,
-                            "chatter_gene": chatter_gene,
-                            "result": result,
-                            "continue": True,
-                        },
-                    )
                     
                     # 4. 根据执行结果处理状态
                     if isinstance(result, Success):

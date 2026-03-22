@@ -75,7 +75,7 @@ class PromptSection(SectionBase):
     """prompt 注入配置。"""
 
     target_prompt_names: list[str] = Field(
-        default_factory=lambda: ["default_chatter_user_prompt"],
+        default_factory=lambda: ["default_chatter_system_prompt"],
         description="允许注入自我叙事的 prompt 模板名",
     )
     prompt_title: str = Field(
@@ -142,4 +142,3 @@ class SelfNarrativeConfig(BaseConfig):
     prompt: PromptSection = Field(default_factory=PromptSection)
     model: ModelSection = Field(default_factory=ModelSection)
     narrative: NarrativeSection = Field(default_factory=NarrativeSection)
-
