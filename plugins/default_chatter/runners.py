@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import Enum
 from typing import AsyncGenerator, TypeGuard
@@ -9,8 +10,10 @@ from typing import AsyncGenerator, TypeGuard
 from src.core.components.base import Wait, Success, Failure, Stop
 from src.core.models.message import Message
 from src.core.models.stream import ChatStream
+from src.core.prompt import get_system_reminder_store
 from src.kernel.logger import Logger
 from src.kernel.llm import LLMPayload, ROLE, Text
+from src.kernel.prompt_snapshot import write_prompt_snapshot
 
 from .type_defs import DefaultChatterRuntime, LLMConversationState, LLMResponseLike
 from .tool_flow import append_suspend_payload_if_action_only, process_tool_calls
@@ -23,6 +26,66 @@ _PLAIN_TEXT_RETRY_REMINDER = (
     "（系统提示：你刚才返回了纯文本而非工具调用。"
     "请务必通过工具调用来完成任务，不要直接输出文字回复。）"
 )
+
+
+def _build_reminder_text() -> str:
+    reminder_text = get_system_reminder_store().get("actor")
+    if not reminder_text.strip():
+        return ""
+    return "<system_reminder>\n" + reminder_text + "\n</system_reminder>"
+
+
+def _build_prompt_sections(
+    *,
+    system_prompt: str,
+    tool_registry: list[dict[str, object]] | None,
+    user_prompt: str,
+    reminder_text: str = "",
+) -> list[dict[str, object]]:
+    sections: list[dict[str, object]] = []
+    if reminder_text.strip():
+        sections.append(
+            {
+                "title": "系统提醒",
+                "role": "system",
+                "content": reminder_text,
+            }
+        )
+    sections.append(
+        {
+            "title": "系统提示词",
+            "role": "system",
+            "content": system_prompt,
+        }
+    )
+    if tool_registry:
+        sections.append(
+            {
+                "title": "工具定义",
+                "role": "tool",
+                "content": json.dumps(tool_registry, ensure_ascii=False, indent=2),
+            }
+        )
+    sections.append(
+        {
+            "title": "用户提示词",
+            "role": "user",
+            "content": user_prompt,
+        }
+    )
+    return sections
+
+
+async def _get_prompt_workspace(chatter: DefaultChatterRuntime):
+    cfg = None
+    if hasattr(chatter, "_get_plugin_config"):
+        cfg = chatter._get_plugin_config()  # type: ignore[attr-defined]
+    if cfg is None:
+        return None
+
+    from plugins.anysoul_core.services.workspace import get_workspace_service
+
+    return get_workspace_service(cfg.plugin.identity_context.workspace_base_path)
 
 
 class _ToolCallWorkflowPhase(str, Enum):
@@ -111,6 +174,8 @@ async def run_enhanced(
 
     history_text = chatter._build_enhanced_history_text(chat_stream)
     usable_map = await chatter.inject_usables(request)
+    unread_lines_snapshot = ""
+    prompt_workspace = await _get_prompt_workspace(chatter)
 
     rt = _EnhancedWorkflowRuntime(
         response=request,
@@ -154,6 +219,7 @@ async def run_enhanced(
                 extra=chatter._build_negative_behaviors_extra(),
             )
             rt.history_merged = True
+            unread_lines_snapshot = unread_lines
 
             decision = await chatter.sub_agent(
                 unread_lines,
@@ -173,6 +239,29 @@ async def run_enhanced(
                 response=rt.response,
                 formatted_text=unread_user_prompt,
             )
+            reminder_text = _build_reminder_text()
+            if prompt_workspace is not None:
+                await write_prompt_snapshot(
+                    prompt_workspace,
+                    scope="default_chatter",
+                    title="DFC 聊天态完整提示词",
+                    sections=_build_prompt_sections(
+                        system_prompt=system_prompt_text,
+                        tool_registry=usable_map.list_all() if hasattr(usable_map, "list_all") else None,
+                        user_prompt=unread_user_prompt,
+                        reminder_text=reminder_text,
+                    ),
+                    metadata={
+                        "source": "default_chatter.runners.run_enhanced",
+                        "mode": "enhanced",
+                        "stream_id": chat_stream.stream_id,
+                        "chat_type": chat_stream.chat_type,
+                        "request_name": "default_chatter",
+                        "history_length": len(history_text.splitlines()) if history_text else 0,
+                        "unread_length": len(unread_lines_snapshot.splitlines()) if unread_lines_snapshot else 0,
+                        "tool_count": len(usable_map.list_all()) if hasattr(usable_map, "list_all") else 0,
+                    },
+                )
             _transition(rt=rt, to_phase=_ToolCallWorkflowPhase.MODEL_TURN, logger=logger, reason="accepted unread batch")
 
             # MODEL_TURN 阶段发送后才 flush 本轮采纳的 unread
@@ -275,6 +364,8 @@ async def run_classical(
         return
 
     usable_map = await chatter.inject_usables(base_request)
+    prompt_workspace = await _get_prompt_workspace(chatter)
+    system_prompt_text = await chatter._build_system_prompt(chat_stream)
 
     while True:
         _, unread_msgs = await chatter.fetch_unreads()
@@ -309,12 +400,35 @@ async def run_classical(
         request.add_payload(
             LLMPayload(
                 ROLE.SYSTEM,
-                Text(await chatter._build_system_prompt(chat_stream)),
+                Text(system_prompt_text),
             )
         )
         request.add_payload(LLMPayload(ROLE.USER, Text(classical_user_text)))
         if usable_map.get_all():
             request.add_payload(LLMPayload(ROLE.TOOL, usable_map.get_all()))  # type: ignore[arg-type]
+        reminder_text = _build_reminder_text()
+        if prompt_workspace is not None:
+            await write_prompt_snapshot(
+                prompt_workspace,
+                scope="default_chatter",
+                title="DFC 聊天态完整提示词",
+                sections=_build_prompt_sections(
+                    system_prompt=system_prompt_text,
+                    tool_registry=usable_map.list_all() if hasattr(usable_map, "list_all") else None,
+                    user_prompt=classical_user_text,
+                    reminder_text=reminder_text,
+                ),
+                metadata={
+                    "source": "default_chatter.runners.run_classical",
+                    "mode": "classical",
+                    "stream_id": chat_stream.stream_id,
+                    "chat_type": chat_stream.chat_type,
+                    "request_name": "default_chatter",
+                    "history_length": len(chat_stream.context.history_messages),
+                    "unread_length": len(unread_msgs),
+                    "tool_count": len(usable_map.list_all()) if hasattr(usable_map, "list_all") else 0,
+                },
+            )
 
         response = request
         cross_round_seen_signatures: set[str] = set()
