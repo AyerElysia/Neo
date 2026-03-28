@@ -32,6 +32,7 @@ from src.core.components.loader import register_plugin
 from src.core.prompt import get_prompt_manager
 from src.core.models.message import Message
 from src.kernel.llm import LLMPayload, ROLE, Text
+from src.kernel.prompt_snapshot import write_prompt_snapshot
 
 from .config import DefaultChatterConfig
 from .decision_agent import decide_should_respond
@@ -45,6 +46,14 @@ _REASON_LEAK_PATTERN = re.compile(
     r'[,，]?\s*["\']?reason["\']?\s*[:：]',
     re.IGNORECASE,
 )
+
+
+def _render_preview_template(template: str, values: dict[str, str]) -> str:
+    """只替换已知占位符，避免 JSON 示例中的大括号被误伤。"""
+    rendered = template
+    for key, value in values.items():
+        rendered = rendered.replace(f"{{{key}}}", value)
+    return rendered
 
 # ─── 系统提示词构建 ─────────────────────────────────────────────
 system_prompt = """# 关于你
@@ -710,6 +719,7 @@ class DefaultChatterPlugin(BasePlugin):
 
     async def on_plugin_loaded(self) -> None:
         from src.core.prompt import optional, wrap, min_len
+        from plugins.anysoul_core.services.workspace import get_workspace_service
 
         plugin_config = self.config
         if isinstance(plugin_config, DefaultChatterConfig):
@@ -721,6 +731,10 @@ class DefaultChatterPlugin(BasePlugin):
             if normalized_usables:
                 TaskChatExecutorAgent.usables = list(dict.fromkeys(normalized_usables))
             logger.info(f"TaskChatExecutorAgent usables: {TaskChatExecutorAgent.usables}")
+            await self._write_prompt_preview_snapshot(
+                plugin_config=plugin_config,
+                workspace=get_workspace_service(),
+            )
 
         get_prompt_manager().get_or_create(
             name="default_chatter_system_prompt",
@@ -773,6 +787,70 @@ class DefaultChatterPlugin(BasePlugin):
                 .then(wrap("# 额外信息\n", "\n- （以上为额外信息，你可以适当参考）")),
             },
         )
+
+    async def _write_prompt_preview_snapshot(
+        self,
+        *,
+        plugin_config: DefaultChatterConfig,
+        workspace,
+    ) -> None:
+        """启动时写一份可视化预览快照，避免看板首次打开为空。"""
+        try:
+            await workspace.initialize()
+            soul_context = await DefaultChatterPromptBuilder._load_soul_context(
+                plugin_config
+            )
+            memory_context = await DefaultChatterPromptBuilder._load_memory_context(
+                plugin_config
+            )
+            preview_system_prompt = _render_preview_template(
+                system_prompt,
+                {
+                    "nickname": "你",
+                    "soul_context": soul_context,
+                    "memory_context": memory_context,
+                    "platform": "unknown",
+                    "chat_type": "unknown",
+                    "platform_name": "未知",
+                    "platform_id": "未知ID",
+                    "theme_guide": "",
+                },
+            )
+            preview_user_prompt = _render_preview_template(
+                user_prompt,
+                {
+                    "stream_name": "（尚未进入会话）",
+                    "history": "",
+                    "unreads": "（暂无未读消息，等待消息触发后生成完整用户提示词）",
+                    "extra": "",
+                },
+            )
+            await write_prompt_snapshot(
+                workspace,
+                scope="default_chatter",
+                title="DFC 聊天态完整提示词",
+                sections=[
+                    {
+                        "title": "系统提示词",
+                        "role": "system",
+                        "content": preview_system_prompt,
+                    },
+                    {
+                        "title": "用户提示词",
+                        "role": "user",
+                        "content": preview_user_prompt,
+                    },
+                ],
+                metadata={
+                    "source": "default_chatter.plugin.on_plugin_loaded",
+                    "mode": DefaultChatterPromptBuilder.get_mode(plugin_config),
+                    "request_name": "default_chatter",
+                    "is_startup_preview": True,
+                },
+            )
+            logger.info("默认聊天态启动预览提示词已写入")
+        except Exception as exc:
+            logger.warning(f"启动提示词快照写入失败: {exc}")
 
     def get_components(self) -> list[type]:
         """获取插件内所有组件类

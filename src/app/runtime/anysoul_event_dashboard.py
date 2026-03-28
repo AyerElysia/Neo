@@ -70,6 +70,7 @@ class AnySoulEventDashboard:
         self._tasks_active = self._workspace / "tasks" / "active"
         self._tasks_completed = self._workspace / "tasks" / "completed"
         self._state_path = self._workspace / "state" / "decision_hub.json"
+        self._prompts_current = self._workspace / "prompts" / "current"
         self._mounted = False
 
     def mount(self, app: Any, prefix: str = "/_anysoul_hub") -> None:
@@ -157,10 +158,12 @@ class AnySoulEventDashboard:
             )
 
         latest_timeline = timeline_files[-1].name if timeline_files else ""
+        prompt_context = self._build_prompt_context()
         return {
             "generated_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "workspace": str(self._workspace),
             "hub_context": self._build_hub_context(),
+            "prompt_context": prompt_context,
             "counts": {
                 "timeline": len(timeline_files),
                 "pending": len(pending_files),
@@ -206,6 +209,26 @@ class AnySoulEventDashboard:
             "recent_events": visible_recent,
             "recent_block_for_prompt": recent_block,
         }
+
+    def _build_prompt_context(self) -> dict[str, Any]:
+        return {
+            "decision_hub": self._read_prompt_snapshot("decision_hub"),
+            "default_chatter": self._read_prompt_snapshot("default_chatter"),
+        }
+
+    def _read_prompt_snapshot(self, scope: str) -> dict[str, Any]:
+        current = _safe_read_json(self._prompts_current / f"{scope}.json")
+        if isinstance(current, dict) and current:
+            return current
+
+        history_dir = self._workspace / "prompts" / "history" / scope
+        if history_dir.exists():
+            history_files = sorted(history_dir.glob("*.json"), key=_sort_key)
+            if history_files:
+                fallback = _safe_read_json(history_files[-1])
+                if isinstance(fallback, dict):
+                    return fallback
+        return {}
 
     @staticmethod
     def _summary(raw: dict[str, Any], payload: dict[str, Any]) -> str:
@@ -255,6 +278,15 @@ class AnySoulEventDashboard:
         hub_ctx = snapshot_data.get("hub_context", {})
         if not isinstance(hub_ctx, dict):
             hub_ctx = {}
+        prompt_ctx = snapshot_data.get("prompt_context", {})
+        if not isinstance(prompt_ctx, dict):
+            prompt_ctx = {}
+        hub_prompt = prompt_ctx.get("decision_hub", {})
+        if not isinstance(hub_prompt, dict):
+            hub_prompt = {}
+        chat_prompt = prompt_ctx.get("default_chatter", {})
+        if not isinstance(chat_prompt, dict):
+            chat_prompt = {}
         return "|".join(
             [
                 str(counts.get("timeline", 0)),
@@ -265,6 +297,10 @@ class AnySoulEventDashboard:
                 str(latest.get("timeline_file", "")),
                 str(hub_ctx.get("recent_total", 0)),
                 str(hub_ctx.get("recent_visible_count", 0)),
+                str(hub_prompt.get("snapshot_id", "")),
+                str(hub_prompt.get("generated_at", "")),
+                str(chat_prompt.get("snapshot_id", "")),
+                str(chat_prompt.get("generated_at", "")),
             ]
         )
 
@@ -368,6 +404,11 @@ _WEBUI_HTML = """<!doctype html>
       padding: 14px;
       margin-bottom: 12px;
     }
+    .prompt-meta {
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 4px;
+    }
     pre {
       white-space: pre-wrap;
       word-break: break-word;
@@ -399,6 +440,16 @@ _WEBUI_HTML = """<!doctype html>
     <aside id="list"></aside>
     <section>
       <div class="detail">
+        <div style="font-weight:700; margin-bottom:10px;">中枢完整提示词</div>
+        <div class="prompt-meta" id="hub-prompt-meta">暂无快照</div>
+        <pre id="hub-prompt">（暂无）</pre>
+      </div>
+      <div class="detail">
+        <div style="font-weight:700; margin-bottom:10px;">DFC 聊天态完整提示词</div>
+        <div class="prompt-meta" id="chat-prompt-meta">暂无快照</div>
+        <pre id="chat-prompt">（暂无）</pre>
+      </div>
+      <div class="detail">
         <div style="font-weight:700; margin-bottom:10px;">中枢看到的 [近期事件] 文本（用于提示词）</div>
         <pre id="hub-block">- （暂无）</pre>
       </div>
@@ -418,6 +469,10 @@ _WEBUI_HTML = """<!doctype html>
     const list = document.getElementById('list');
     const detailTitle = document.getElementById('detail-title');
     const detailJson = document.getElementById('detail-json');
+    const hubPrompt = document.getElementById('hub-prompt');
+    const hubPromptMeta = document.getElementById('hub-prompt-meta');
+    const chatPrompt = document.getElementById('chat-prompt');
+    const chatPromptMeta = document.getElementById('chat-prompt-meta');
     const hubBlock = document.getElementById('hub-block');
     const hubJson = document.getElementById('hub-json');
     let current = null;
@@ -444,6 +499,17 @@ _WEBUI_HTML = """<!doctype html>
       current = snapshot;
       updateChips(snapshot, true);
       const hubContext = snapshot.hub_context || {};
+      const promptContext = snapshot.prompt_context || {};
+      const hubPromptContext = promptContext.decision_hub || {};
+      const chatPromptContext = promptContext.default_chatter || {};
+      hubPrompt.textContent = hubPromptContext.rendered_prompt || '（暂无）';
+      chatPrompt.textContent = chatPromptContext.rendered_prompt || '（暂无）';
+      hubPromptMeta.textContent = hubPromptContext.generated_at
+        ? `更新时间: ${hubPromptContext.generated_at} | ${hubPromptContext.metadata?.request_name || ''} | ${hubPromptContext.metadata?.model_task || ''}`
+        : '暂无快照';
+      chatPromptMeta.textContent = chatPromptContext.generated_at
+        ? `更新时间: ${chatPromptContext.generated_at} | ${chatPromptContext.metadata?.request_name || ''} | ${chatPromptContext.metadata?.mode || ''}`
+        : '暂无快照';
       hubBlock.textContent = hubContext.recent_block_for_prompt || '- （暂无）';
       hubJson.textContent = JSON.stringify(hubContext, null, 2);
       const events = snapshot.events || [];
