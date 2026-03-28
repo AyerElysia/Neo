@@ -40,7 +40,7 @@ db_path = "data/emoji_sender/vector_db"
 
 # 检索候选数量 topN
 # 值类型：int, 默认值：8
-top_n = 16
+top_n = 32
 
 # 最大距离阈值（距离越小越相似）
 # 值类型：float, 默认值：0.35

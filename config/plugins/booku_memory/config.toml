@@ -34,7 +34,7 @@ default_top_k = 5
 
 # 默认是否检索归档记忆
 # 值类型：bool, 默认值：false
-include_archived_default = false
+include_archived_default = true
 
 # 默认是否检索知识库
 # 值类型：bool, 默认值：false

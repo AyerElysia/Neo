@@ -17,6 +17,72 @@ class DefaultChatterConfig(BaseConfig):
     class PluginSection(SectionBase):
         """插件基础配置。"""
 
+        @config_section("identity_context", title="身份上下文", tag="ai", order=5)
+        class IdentityContextSection(SectionBase):
+            """Soul/Memory 身份上下文配置。"""
+
+            workspace_base_path: str = Field(
+                default="data/anysoul_workspace",
+                description="身份工作空间根目录（包含 soul.md 和 memory/）",
+                label="工作空间路径",
+                tag="path",
+                order=0,
+            )
+            soul_rel_path: str = Field(
+                default="soul.md",
+                description="Soul 文件相对路径（相对于工作空间根目录）",
+                label="Soul 路径",
+                tag="path",
+                order=1,
+            )
+            memory_rel_path: str = Field(
+                default="memory.md",
+                description="长期记忆文件相对路径（相对于工作空间根目录）",
+                label="长期记忆路径",
+                tag="path",
+                order=2,
+            )
+            memory_max_chars: int = Field(
+                default=6000,
+                description="长期记忆注入系统提示词的最大字符数",
+                label="长期记忆长度上限",
+                tag="ai",
+                order=3,
+            )
+            memory_dirs: list[str] = Field(
+                default=[
+                    "memory/conversations",
+                    "memory/relationships",
+                    "memory/knowledge",
+                    "memory/reflections",
+                ],
+                description="（已弃用）历史目录扫描配置，不再用于系统提示词注入",
+                label="记忆目录（弃用）",
+                tag="path",
+                order=90,
+            )
+            memory_max_files: int = Field(
+                default=8,
+                description="（已弃用）历史目录扫描文件上限",
+                label="记忆文件上限（弃用）",
+                tag="ai",
+                order=91,
+            )
+            soul_max_chars: int = Field(
+                default=5000,
+                description="Soul 注入的最大字符数",
+                label="Soul 长度上限",
+                tag="ai",
+                order=4,
+            )
+            memory_snippet_chars: int = Field(
+                default=260,
+                description="（已弃用）目录扫描模式下单条记忆片段长度",
+                label="记忆片段长度（弃用）",
+                tag="ai",
+                order=92,
+            )
+
         @config_section("theme_guide", title="场景引导", tag="text", order=10)
         class ThemeGuideSection(SectionBase):
             """不同聊天类型的人设/语气引导。"""
@@ -38,27 +104,6 @@ class DefaultChatterConfig(BaseConfig):
                 rows=3,
                 tag="text",
                 order=1
-            )
-
-        @config_section("debug", title="调试设置", tag="debug", order=20)
-        class DebugSection(SectionBase):
-            """调试输出相关配置。"""
-
-            show_prompt: bool = Field(
-                default=False,
-                description="是否输出发送给 LLM 的完整提示词",
-                label="显示完整上下文",
-                tag="debug",
-                hint="开启后会打印系统提示词、历史消息、未读消息和工具列表",
-                order=0
-            )
-            show_response: bool = Field(
-                default=False,
-                description="是否输出 LLM 响应调试摘要",
-                label="显示响应摘要",
-                tag="debug",
-                hint="开启后会打印模型返回的工具调用和文本摘要",
-                order=0
             )
 
         enabled: bool = Field(
@@ -86,40 +131,39 @@ class DefaultChatterConfig(BaseConfig):
             hint="开启后会在每轮对话中强调禁止行为",
             order=2
         )
-        native_multimodal: bool = Field(
-            default=False,
-            description=(
-                "原生多模态模式。启用后，图片直接打包进 LLM payload，"
-                "由主模型在对话上下文中理解图片内容并做出响应。"
-                "需确保对应模型支持多模态输入。"
-            ),
-            label="原生多模态",
+        negative_behaviors: list[str] = Field(
+            default=[],
+            description="额外负面行为约束（可选）。启用增强负面行为约束时会注入。",
+            label="负面行为约束",
             tag="ai",
-            hint="开启后可直接看图，绕过 VLM 转译",
-            order=3
+            order=21,
         )
-        max_images_per_payload: int = Field(
-            default=4,
-            description=(
-                "原生多模态模式下单次 payload 的图片上限。"
-                "用户新消息图片优先，其次是历史图片。"
-            ),
-            label="单次图片上限",
-            tag="ai",
-            hint="建议保持在 4 左右，避免上下文过重",
-            order=4
+        enable_cooldown: bool = Field(
+            default=True,
+            description="是否启用回复后冷却功能。开启后 stop_conversation 工具指定的冷却时间将生效，期间新消息不会触发回复；关闭时冷却时间归零，消息可立即触发新对话",
+            label="启用回复后冷却",
+            tag="performance",
+            hint="关闭可避免因 LLM 设置过长冷却时间导致长时间无法回复",
+            order=3
         )
         theme_guide: ThemeGuideSection = Field(
             default_factory=ThemeGuideSection,
             description="按聊天类型区分的额外提示词",
             label="场景引导配置",
-            order=5
+            order=4
         )
-        debug: DebugSection = Field(
-            default_factory=DebugSection,
-            description="调试输出配置",
-            label="调试配置",
-            order=6
+        identity_context: IdentityContextSection = Field(
+            default_factory=IdentityContextSection,
+            description="Soul/Memory 身份上下文配置",
+            label="身份上下文配置",
+            order=5,
+        )
+        task_executor_usables: list[str] = Field(
+            default_factory=lambda: ["default_chatter:action:send_text"],
+            description="任务态执行器可调用组件签名列表（TaskChatExecutorAgent）",
+            label="任务态执行器可用组件",
+            tag="ai",
+            order=6,
         )
 
     plugin: PluginSection = Field(default_factory=PluginSection)

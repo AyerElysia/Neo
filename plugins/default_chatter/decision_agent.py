@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json_repair
 
-from src.core.config import get_core_config
 from src.core.models.stream import ChatStream
 from src.core.prompt import get_prompt_manager
 from src.kernel.logger import Logger
@@ -110,7 +109,7 @@ async def decide_should_respond(
     except (ValueError, KeyError):
         return {"should_respond": True, "reason": "未找到 sub_actor 配置，默认响应"}
 
-    nickname = get_core_config().personality.nickname
+    nickname = str(chat_stream.bot_nickname or "你")
     tmpl = get_prompt_manager().get_template("default_chatter_sub_agent_prompt")
     if tmpl:
         sub_prompt = await tmpl.set("nickname", nickname).build()

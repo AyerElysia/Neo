@@ -86,6 +86,25 @@ class MessageReceiver:
             cardname=message.sender_cardname,
         )
 
+        # 2. 将“用户信息更新”作为中枢事件入队（AnySoul 事件流）
+        try:
+            from plugins.anysoul_core.services import get_decision_hub
+
+            hub = get_decision_hub()
+            event_id = await hub.enqueue_user_profile_event(
+                platform=message.platform,
+                user_id=message.sender_id,
+                nickname=message.sender_name,
+                cardname=message.sender_cardname,
+                stream_id=message.stream_id,
+                source="message_receiver.update_person_info",
+            )
+            await hub.process_pending_once(max_events=1, trigger="on_user_profile_updated")
+            logger.debug(f"用户信息事件已处理: event_id={event_id}")
+        except Exception as exc:
+            # fail-open：不影响主消息处理链路
+            logger.debug(f"用户信息事件入队失败（已忽略）: {exc}")
+
     # ──────────────────────────────────────────
     # 公共接口
     # ──────────────────────────────────────────

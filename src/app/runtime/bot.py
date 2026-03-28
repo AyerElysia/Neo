@@ -529,6 +529,15 @@ class Bot:
             except Exception:
                 pass
 
+            # 挂载 AnySoul 中枢事件流看板（SSE 实时 WebUI）
+            try:
+                from src.app.runtime.anysoul_event_dashboard import (
+                    get_anysoul_event_dashboard,
+                )
+                get_anysoul_event_dashboard().mount(self.http_server.app)
+            except Exception:
+                pass
+
             self.ui.update_phase_status("HTTP服务器", "已启动")
 
     async def _discover_plugins(self) -> None:

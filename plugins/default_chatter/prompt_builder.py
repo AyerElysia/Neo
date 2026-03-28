@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
+
+import aiofiles
 
 from src.core.components.types import ChatType
-from src.core.config import get_core_config
 from src.core.models.message import Message
 from src.core.models.stream import ChatStream
 from src.core.prompt import get_prompt_manager
@@ -15,6 +17,72 @@ from .config import DefaultChatterConfig
 
 class DefaultChatterPromptBuilder:
     """Default Chatter 提示词构建器。"""
+
+    @staticmethod
+    def _truncate(text: str, limit: int) -> str:
+        if len(text) <= limit:
+            return text
+        return f"{text[:limit]}..."
+
+    @staticmethod
+    async def _read_text(path: Path) -> str:
+        if not path.exists() or not path.is_file():
+            return ""
+        try:
+            async with aiofiles.open(path, "r", encoding="utf-8") as f:
+                return await f.read()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _identity_cfg(
+        plugin_config: DefaultChatterConfig | None,
+    ) -> DefaultChatterConfig.PluginSection.IdentityContextSection:
+        if (
+            plugin_config is not None
+            and hasattr(plugin_config, "plugin")
+            and hasattr(plugin_config.plugin, "identity_context")
+        ):
+            return plugin_config.plugin.identity_context
+        return DefaultChatterConfig.PluginSection.IdentityContextSection()
+
+    @staticmethod
+    async def _load_soul_context(
+        plugin_config: DefaultChatterConfig | None,
+    ) -> str:
+        cfg = DefaultChatterPromptBuilder._identity_cfg(plugin_config)
+        base_path = Path(cfg.workspace_base_path).expanduser()
+        soul_path = base_path / cfg.soul_rel_path
+        soul_text = await DefaultChatterPromptBuilder._read_text(soul_path)
+
+        if not soul_text.strip():
+            return (
+                "# 我是谁\n"
+                "我是一个与自己历史连续、关系连续、表达连续的数字生命体。"
+            )
+
+        max_chars = cfg.soul_max_chars if cfg.soul_max_chars > 200 else 200
+        return DefaultChatterPromptBuilder._truncate(soul_text.strip(), max_chars)
+
+    @staticmethod
+    async def _load_memory_context(
+        plugin_config: DefaultChatterConfig | None,
+    ) -> str:
+        cfg = DefaultChatterPromptBuilder._identity_cfg(plugin_config)
+        base_path = Path(cfg.workspace_base_path).expanduser()
+        memory_path = base_path / cfg.memory_rel_path
+        memory_text = await DefaultChatterPromptBuilder._read_text(memory_path)
+        if not memory_text.strip():
+            return "- （长期记忆文件为空或不存在）"
+
+        max_chars = cfg.memory_max_chars if cfg.memory_max_chars > 200 else 200
+        compact = " ".join(memory_text.split())
+        content = DefaultChatterPromptBuilder._truncate(compact, max_chars)
+        try:
+            rel_name = str(memory_path.relative_to(base_path))
+        except Exception:
+            rel_name = memory_path.name
+        return f"- [{rel_name}] {content}"
 
     @staticmethod
     def get_mode(plugin_config: DefaultChatterConfig | None) -> str:
@@ -32,7 +100,7 @@ class DefaultChatterPromptBuilder:
         ):
             return ""
 
-        negative_behaviors = get_core_config().personality.negative_behaviors
+        negative_behaviors = plugin_config.plugin.negative_behaviors
         if not negative_behaviors:
             return ""
 
@@ -45,6 +113,19 @@ class DefaultChatterPromptBuilder:
         chat_stream: ChatStream,
     ) -> str:
         """构建系统提示词。"""
+        from src.app.plugin_system.api import adapter_api
+
+        bot_info = await adapter_api.get_bot_info_by_platform(chat_stream.platform) or {}
+        platform_name = str(
+            bot_info.get("bot_name")
+            or chat_stream.bot_nickname
+            or "未知"
+        )
+        platform_id = str(
+            bot_info.get("bot_id")
+            or chat_stream.bot_id
+            or "未知"
+        )
         selected_theme_guide = ""
         if plugin_config is not None:
             chat_type_raw = str(chat_stream.chat_type or "").lower()
@@ -54,6 +135,9 @@ class DefaultChatterPromptBuilder:
             elif chat_type_raw == ChatType.GROUP.value:
                 selected_theme_guide = plugin_config.plugin.theme_guide.group
 
+        soul_context = await DefaultChatterPromptBuilder._load_soul_context(plugin_config)
+        memory_context = await DefaultChatterPromptBuilder._load_memory_context(plugin_config)
+
         tmpl = get_prompt_manager().get_template("default_chatter_system_prompt")
         if not tmpl:
             return ""
@@ -61,9 +145,11 @@ class DefaultChatterPromptBuilder:
             tmpl.set("platform", chat_stream.platform)
             .set("chat_type", chat_stream.chat_type)
             .set("nickname", chat_stream.bot_nickname)
-            .set("bot_id", chat_stream.bot_id)
+            .set("platform_id", platform_id)
+            .set("platform_name", platform_name)
             .set("theme_guide", selected_theme_guide)
-            .set("stream_id", chat_stream.stream_id or "")
+            .set("soul_context", soul_context)
+            .set("memory_context", memory_context)
             .build()
         )
 

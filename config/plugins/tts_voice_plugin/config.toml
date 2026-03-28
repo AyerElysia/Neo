@@ -40,6 +40,14 @@ timeout = 180
 # 值类型：int, 默认值：1000
 max_text_length = 1000
 
+# 允许发送给 TTS API 的 text_lang 语言代码列表。支持带说明格式（如 zh(中英混合)），服务端会自动提取括号前代码。
+# 值类型：list, 默认值：["zh", "en", "ja", "yue", "auto", "auto_yue"]
+supported_text_languages = ["zh", "en", "ja", "yue", "auto", "auto_yue"]
+
+# 当输入语言非法或不受支持时的兜底语言代码
+# 值类型：str, 默认值："zh"
+fallback_text_language = "zh"
+
 # TTS 风格参数配置，每个实例代表一种独立的语音风格。
 [[tts_styles]]
 # 风格唯一标识符，必须有一个名为 default
