@@ -402,6 +402,13 @@ JSON 输出格式：
     async def _write_prompt_preview_snapshot(self, state: dict[str, Any]) -> None:
         """在启动时写入中枢提示词预览，避免看板首次打开时为空。"""
         try:
+            current_snapshot = await self.workspace.read_json("prompts/current/decision_hub.json")
+            if (
+                isinstance(current_snapshot, dict)
+                and not bool(current_snapshot.get("metadata", {}).get("is_startup_preview"))
+            ):
+                logger.info("检测到已有真实中枢提示词快照，跳过启动预览覆盖")
+                return
             recent_block = self._format_recent_events_for_hub_prompt(
                 await self.get_recent_events(limit=12)
             )

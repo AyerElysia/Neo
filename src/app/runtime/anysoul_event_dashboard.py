@@ -219,11 +219,24 @@ class AnySoulEventDashboard:
     def _read_prompt_snapshot(self, scope: str) -> dict[str, Any]:
         current = _safe_read_json(self._prompts_current / f"{scope}.json")
         if isinstance(current, dict) and current:
-            return current
+            metadata = current.get("metadata", {})
+            if not isinstance(metadata, dict):
+                metadata = {}
+            if not metadata.get("is_startup_preview"):
+                return current
 
         history_dir = self._workspace / "prompts" / "history" / scope
         if history_dir.exists():
             history_files = sorted(history_dir.glob("*.json"), key=_sort_key)
+            for path in reversed(history_files):
+                fallback = _safe_read_json(path)
+                if not isinstance(fallback, dict):
+                    continue
+                metadata = fallback.get("metadata", {})
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                if not metadata.get("is_startup_preview"):
+                    return fallback
             if history_files:
                 fallback = _safe_read_json(history_files[-1])
                 if isinstance(fallback, dict):

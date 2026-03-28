@@ -797,6 +797,13 @@ class DefaultChatterPlugin(BasePlugin):
         """启动时写一份可视化预览快照，避免看板首次打开为空。"""
         try:
             await workspace.initialize()
+            current_snapshot = await workspace.read_json("prompts/current/default_chatter.json")
+            if (
+                isinstance(current_snapshot, dict)
+                and not bool(current_snapshot.get("metadata", {}).get("is_startup_preview"))
+            ):
+                logger.info("检测到已有真实聊天态提示词快照，跳过启动预览覆盖")
+                return
             soul_context = await DefaultChatterPromptBuilder._load_soul_context(
                 plugin_config
             )
